@@ -1,0 +1,2571 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="apple-mobile-web-app-capable" content="yes"><style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}[hidden]{display:none!important}</style></head><body><title>ボードシェイプ・ビューア</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+  /* レイアウト: スマホ縦画面のアプリ型。上=ファイルと寸法（タップで変更）、中央=表示（ノーズが上）、その下=位置スライダーと数値、最下段=タブバー */
+  :root {
+    --bg: #edf1f1;
+    --surface: #ffffff;
+    --fg: #15242a;
+    --muted: #5a6c73;
+    --line: #d0dadc;
+    --accent: #0a7484;
+    --accent-soft: rgba(10, 116, 132, 0.12);
+    --stringer: #9a6a37;
+    --edge: #2f63e0;
+    --scrim: rgba(10, 20, 24, 0.35);
+    --danger: #b8402f;
+    --font-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+    --font-body: "Noto Sans JP", "Hiragino Sans", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d161a; --surface: #152228; --fg: #e2ebed; --muted: #8ea2a9; --line: #29393f;
+      --accent: #43b8c6; --accent-soft: rgba(67, 184, 198, 0.16); --stringer: #c99559; --edge: #7aa2ff;
+      --scrim: rgba(0, 0, 0, 0.5); --danger: #e57361;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d161a; --surface: #152228; --fg: #e2ebed; --muted: #8ea2a9; --line: #29393f;
+    --accent: #43b8c6; --accent-soft: rgba(67, 184, 198, 0.16); --stringer: #c99559; --edge: #7aa2ff;
+    --scrim: rgba(0, 0, 0, 0.5); --danger: #e57361;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { height: 100%; }
+  body {
+    height: 100%; margin: 0; overflow: hidden;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-user-select: none; user-select: none;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .app { height: 100%; max-width: 460px; margin: 0 auto; display: flex; flex-direction: column; background: var(--bg); }
+  @media (min-width: 520px) { .app { border-left: 1px solid var(--line); border-right: 1px solid var(--line); } }
+  .pad { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  /* 上部 */
+  .top { padding-block: 10px 8px; display: flex; flex-direction: column; gap: 8px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .brand { font-family: var(--font-display); font-weight: 700; font-size: 1.45rem; letter-spacing: 0.02em; margin: 0; flex: 1; min-width: 0; }
+  select, .btn, .tool {
+    font-size: 0.88rem; color: var(--fg); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; height: 40px;
+  }
+  select { flex: 1; min-width: 0; font: inherit; font-size: 0.88rem; }
+  .btn { display: inline-flex; align-items: center; cursor: pointer; background: var(--accent); color: var(--surface); border-color: var(--accent); font-weight: 500; white-space: nowrap; }
+  .btn:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tool { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .tool svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .dims { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .dim { background: var(--surface); padding: 6px 8px; display: flex; flex-direction: column; align-items: flex-start; min-width: 0; border: 0; text-align: left; }
+  .dim .k { font-size: 0.66rem; color: var(--muted); white-space: nowrap; display: flex; align-items: center; gap: 3px; }
+  .dim .k svg { width: 11px; height: 11px; fill: none; stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .dim .v { font-family: var(--font-display); font-size: 1.32rem; font-weight: 600; line-height: 1.1; color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .dim .s { font-size: 0.62rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-variant-numeric: tabular-nums; }
+  .dim .s.changed { color: var(--stringer); }
+  .dim.ro .v { color: var(--fg); }
+  button.dim:active { background: var(--accent-soft); }
+
+  /* 表示エリア */
+  .stage { position: relative; flex: 1; min-height: 0; margin: 0 max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+  .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  .views { position: absolute; top: 8px; left: 8px; right: 8px; display: flex; gap: 6px; justify-content: center; }
+  .views button { font-size: 0.85rem; height: 36px; padding: 0 12px; border-radius: 18px; background: var(--surface); color: var(--fg); border: 1px solid var(--line); }
+  .views button[aria-pressed="true"] { background: var(--accent); color: var(--surface); border-color: var(--accent); }
+  .hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-size: 0.72rem; color: var(--muted); pointer-events: none; }
+  .msg { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
+
+  /* 位置スライダーと数値 */
+  .under { padding-block: 6px 4px; display: flex; flex-direction: column; gap: 2px; min-height: 52px; }
+  .posrow { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .under input[type=range] { width: 100%; height: 34px; accent-color: var(--accent); margin: 0; }
+  .chips { display: flex; gap: 8px; }
+  .chip {
+    flex: 1; min-width: 0; height: 48px; border-radius: 12px; border: 1.5px solid var(--accent);
+    background: var(--surface); display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 12px;
+  }
+  .chip .ck { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+  .chip .cv { font-family: var(--font-display); font-size: 1.35rem; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .chip svg { width: 16px; height: 16px; flex: none; fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .chip:active { background: var(--accent-soft); }
+  .chips.three .chip { padding: 0 8px; gap: 4px; }
+  .chips.three .chip .cv { font-size: 1.15rem; }
+  .chip .cv.txt { font-family: var(--font-body); font-size: 0.85rem; font-weight: 700; }
+
+  /* 断面の形シート */
+  .sheet.sec { max-height: 88vh; overflow-y: auto; gap: 8px; }
+  #secPrev { width: 100%; height: 110px; display: block; background: var(--bg); border-radius: 10px; }
+  #secSheet.rail #secPrev { height: 150px; }
+  .srow { display: flex; flex-direction: column; gap: 0; }
+  .srow .shead { display: flex; justify-content: space-between; align-items: baseline; font-size: 0.85rem; }
+  .srow .shead b { font-weight: 700; }
+  .srow .shead span { color: var(--accent); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .srow input[type=range] { width: 100%; height: 34px; margin: 0; accent-color: var(--accent); }
+  .srow .ends { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--muted); margin-top: -4px; }
+  .sheet-actions.three { grid-template-columns: 1fr 1fr 1.3fr; }
+  .railth { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 4px; }
+  .railth .rt { background: var(--surface); padding: 6px 10px; display: flex; flex-direction: column; min-width: 0; }
+  .railth .rk { font-size: 0.68rem; color: var(--muted); }
+  .railth .rv { font-family: var(--font-display); font-size: 1.35rem; font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; line-height: 1.15; white-space: nowrap; }
+  .railth .ro { font-size: 0.68rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .seg3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 4px; }
+  .seg3 button { height: 44px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font-size: 0.95rem; }
+  .seg3 button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 700; }
+  .note { margin: 0; font-size: 0.75rem; color: var(--muted); }
+  .err { color: var(--danger); }
+
+  /* 下部タブバー */
+  .tabbar { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); background: var(--surface); margin-top: 6px; }
+  .tabbar button { font-size: 0.72rem; color: var(--muted); background: none; border: 0; height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+  .tabbar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .tabbar button[aria-selected="true"] { color: var(--accent); font-weight: 700; }
+
+  /* 数値入力シート */
+  .scrim { position: fixed; inset: 0; background: var(--scrim); z-index: 20; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; max-width: 460px; margin: 0 auto;
+    background: var(--surface); border-radius: 18px 18px 0 0; border: 1px solid var(--line);
+    padding: 14px max(16px, env(safe-area-inset-right, 0px)) calc(14px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+    display: flex; flex-direction: column; gap: 10px;
+    -webkit-user-select: text; user-select: text;
+  }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .sheet h2 { margin: 0; font-size: 1.05rem; }
+  .units { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .units button { border: 0; background: var(--surface); height: 32px; padding: 0 12px; font-size: 0.8rem; }
+  .units button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+  .sheet-sub { margin: 0; font-size: 0.78rem; color: var(--muted); }
+  .stepper { display: grid; grid-template-columns: 56px 1fr 56px; gap: 8px; align-items: center; }
+  .stepper > button { height: 56px; border-radius: 14px; border: 1px solid var(--line); background: var(--bg); font-size: 1.6rem; line-height: 1; }
+  .fields { display: flex; gap: 6px; align-items: baseline; justify-content: center; min-width: 0; }
+  .fields label { display: flex; align-items: baseline; gap: 2px; min-width: 0; }
+  .fields input {
+    width: 100%; min-width: 0; height: 56px; text-align: center; border-radius: 12px; border: 1.5px solid var(--accent);
+    background: var(--surface); color: var(--fg); font-family: var(--font-display); font-size: 1.9rem; font-weight: 600;
+  }
+  .fields .u { font-size: 0.85rem; color: var(--muted); }
+  .preview { margin: 0; text-align: center; font-size: 0.85rem; font-variant-numeric: tabular-nums; min-height: 1.3em; }
+  .sheet-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; }
+  .sheet-actions button { height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); font-size: 0.95rem; }
+  .sheet-actions .primary { background: var(--accent); border-color: var(--accent); color: var(--surface); font-weight: 700; }
+
+  .namefield { display: flex; flex-direction: column; gap: 6px; font-size: 0.8rem; color: var(--muted); }
+  .namefield input { height: 48px; border-radius: 12px; border: 1.5px solid var(--accent); background: var(--surface); color: var(--fg); font: inherit; font-size: 1.05rem; padding: 0 12px; -webkit-user-select: text; user-select: text; }
+  .toast {
+    position: fixed; z-index: 30; left: 50%; transform: translateX(-50%);
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px)); width: min(420px, calc(100% - 32px));
+    background: var(--fg); color: var(--bg); border-radius: 12px; padding: 10px 14px;
+    font-size: 0.82rem; line-height: 1.5; text-align: center;
+  }
+</style>
+
+<div class="app">
+  <header class="top pad">
+    <div class="row">
+      <h1 class="brand">ボードシェイプ</h1>
+      <button type="button" class="tool" id="save">
+        <svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/></svg>保存</button>
+      <label class="btn" for="file">開く<input id="file" class="vh" type="file"></label>
+    </div>
+    <div class="row">
+      <select id="sample" aria-label="表示するボード"></select>
+      <button type="button" class="tool" id="undo" disabled aria-label="1つ前に戻す">
+        <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>戻す</button>
+      <button type="button" class="tool" id="reset" disabled>読み込んだ形</button>
+    </div>
+    <section class="dims" id="dims" aria-label="寸法（タップで変更）"></section>
+  </header>
+
+  <div class="stage" id="stage">
+    <canvas id="c3d" aria-label="ボードの 3D 表示"></canvas>
+    <canvas id="c2d" aria-label="ボードの図面" hidden></canvas>
+    <div class="views" id="views" role="group" aria-label="視点">
+      <button type="button" data-view="persp" aria-pressed="true">斜め</button>
+      <button type="button" data-view="deck" aria-pressed="false">デッキ</button>
+      <button type="button" data-view="bottom" aria-pressed="false">ボトム</button>
+      <button type="button" data-view="side" aria-pressed="false">横</button>
+    </div>
+    <div class="hint" id="hint">1本指で回転 ・ 2本指で拡大と移動</div>
+  </div>
+
+  <div class="under pad">
+    <div id="posCtl" hidden>
+      <div class="posrow"><span id="posTail"></span><span id="posNose"></span></div>
+      <input type="range" id="pos" min="0" max="1000" value="500" aria-label="位置（テール〜ノーズ）">
+      <div class="chips" id="chips"></div>
+    </div>
+    <p class="note" id="note"></p>
+  </div>
+
+  <nav class="tabbar pad" role="tablist" aria-label="表示の切り替え">
+    <button type="button" role="tab" data-tab="3d" aria-selected="true">
+      <svg viewBox="0 0 24 24"><path d="M12 2c3 3 4.5 7 4.5 11S15 20 12 22c-3-2-4.5-5-4.5-9S9 5 12 2z"/><path d="M12 2v20"/></svg>3D</button>
+    <button type="button" role="tab" data-tab="outline" aria-selected="false">
+      <svg viewBox="0 0 24 24"><path d="M12 2c3.5 3 5 7 5 11s-1.5 7-5 9c-3.5-2-5-5-5-9s1.5-8 5-11z"/></svg>アウトライン</button>
+    <button type="button" role="tab" data-tab="rocker" aria-selected="false">
+      <svg viewBox="0 0 24 24"><path d="M13 2c-1.5 4-2 8-2 11s.5 6 1.5 9"/><path d="M16 2.5c-1 4-1.5 8-1.5 11s.4 5.5 1 8.5"/></svg>ロッカー</button>
+    <button type="button" role="tab" data-tab="section" aria-selected="false">
+      <svg viewBox="0 0 24 24"><path d="M3 14c2-4 6-5 9-5s7 1 9 5c-3 1.5-6 2-9 2s-6-.5-9-2z"/></svg>断面</button>
+  </nav>
+</div>
+
+<p class="toast" id="toast" role="status" hidden></p>
+<div class="scrim" id="scrim" hidden></div>
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+  <div class="sheet-head">
+    <h2 id="sheetTitle"></h2>
+    <div class="units" role="group" aria-label="単位">
+      <button type="button" data-unit="in" aria-pressed="true">インチ</button>
+      <button type="button" data-unit="cm" aria-pressed="false">cm</button>
+    </div>
+  </div>
+  <p class="sheet-sub" id="sheetSub"></p>
+  <div class="stepper">
+    <button type="button" id="minus" aria-label="小さくする">−</button>
+    <div class="fields" id="fields"></div>
+    <button type="button" id="plus" aria-label="大きくする">＋</button>
+  </div>
+  <p class="preview" id="preview"></p>
+  <div class="sheet-actions">
+    <button type="button" id="cancel">キャンセル</button>
+    <button type="button" id="ok" class="primary">決定</button>
+  </div>
+</div>
+
+<div class="sheet" id="saveSheet" role="dialog" aria-modal="true" aria-labelledby="saveTitle" hidden>
+  <div class="sheet-head"><h2 id="saveTitle">名前を付けて保存</h2></div>
+  <label class="namefield" for="saveName">ファイル名
+    <input id="saveName" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="60">
+  </label>
+  <p class="sheet-sub" id="saveNote"></p>
+  <div class="sheet-actions">
+    <button type="button" id="saveCancel">キャンセル</button>
+    <button type="button" id="saveOk" class="primary">保存</button>
+  </div>
+</div>
+
+<div class="sheet sec" id="secSheet" role="dialog" aria-modal="true" aria-labelledby="secTitle" hidden>
+  <div class="sheet-head"><h2 id="secTitle"></h2></div>
+  <p class="sheet-sub" id="secSub"></p>
+  <canvas id="secPrev" aria-label="断面のプレビュー（点線が変更前の形）"></canvas>
+  <div id="grpConcave">
+    <div class="seg3" id="ccType" role="group" aria-label="コンケーブの種類">
+      <button type="button" data-type="single" aria-pressed="true">シングル</button>
+      <button type="button" data-type="double" aria-pressed="false">ダブル</button>
+      <button type="button" data-type="vee" aria-pressed="false">V</button>
+    </div>
+    <div class="srow">
+      <div class="shead"><b>深さ</b><span id="vDepth"></span></div>
+      <input type="range" id="sDepth" min="0" max="8" step="0.1" aria-label="コンケーブの深さ（ミリ）">
+      <div class="ends"><span>0 mm</span><span>8 mm</span></div>
+    </div>
+    <p class="sheet-sub" id="ccHow"></p>
+  </div>
+  <div id="grpRail">
+    <div class="railth" aria-live="polite">
+      <div class="rt"><span class="rk">レール先端から 1cm の厚み</span><span class="rv" id="rt1"></span><span class="ro" id="rt1o"></span></div>
+      <div class="rt"><span class="rk">レール先端から 2cm の厚み</span><span class="rv" id="rt2"></span><span class="ro" id="rt2o"></span></div>
+    </div>
+    <div class="srow">
+      <div class="shead"><b>レールの高さ（ポイントの位置）</b><span id="vB"></span></div>
+      <input type="range" id="sB" min="8" max="85" step="1" aria-label="レールのポイントの高さ（厚さに対する割合）">
+      <div class="ends"><span>下（ボトム側）</span><span>上（デッキ側）</span></div>
+    </div>
+    <div class="srow">
+      <div class="shead"><b>ポイントから上の形</b><span id="vC"></span></div>
+      <input type="range" id="sC" min="-100" max="100" step="5" aria-label="ポイントから上の形">
+      <div class="ends"><span>絞る</span><span>ふっくら</span></div>
+    </div>
+    <div class="srow">
+      <div class="shead"><b>ポイントから下の形</b><span id="vG"></span></div>
+      <input type="range" id="sG" min="-100" max="100" step="5" aria-label="ポイントから下の形">
+      <div class="ends"><span>丸い</span><span>エッジ</span></div>
+    </div>
+  </div>
+  <div class="sheet-actions three">
+    <button type="button" id="secZero">変更なし</button>
+    <button type="button" id="secCancel">キャンセル</button>
+    <button type="button" id="secOk" class="primary">決定</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+/*
+ * brd.js — BoardCAD .brd ファイルの読み込み・形の計算・編集・書き出し（DOM に依存しない）
+ *
+ * 座標: x = テールからの距離(cm)、y = 高さ(cm)、z = 中心線からの幅方向(cm)
+ *   p32 アウトライン(半幅)  p33 ボトム(ロッカー)  p34 デッキ  p35 断面(p36 = 位置)
+ *   制御点 (cp [x, y, 前ハンドルx, 前ハンドルy, 後ハンドルx, 後ハンドルy] 連続 ?)
+ *
+ * 使い方:
+ *   var doc   = BRD.docFromText(text);          // ファイルの中身（曲線と制御点）
+ *   var base  = BRD.baseFromDoc(doc);           // 形の計算の準備
+ *   var board = BRD.shape(base);                // 寸法・3D・図面用の形
+ *   doc = BRD.edit(doc, base, board, kind, value, u);   // 点を動かす / 足す
+ *   var text2 = BRD.docToText(doc, board);      // 保存（見たままの曲線を書き出す）
+ */
+(function (g) {
+  'use strict';
+
+  var NS = 128;         // 断面の半分を何点で表すか（レールを丸くなめらかに見せるため多め）
+  var STATIONS = 160;   // 3D メッシュの長さ方向の分割数
+  var PROFILE = 300;    // 2D 図面用の分割数
+  var RAIL_B = 0.6;     // 断面の b = ±1 で、レールのポイントの高さが厚さの ±60% 動く
+  var RGRID = 400;      // なめらかなカーブを計算するときの分割数
+  var C_MIN = 0.05, C_MAX = 30;   // 曲がり方の倍率の下限・上限（プラスのまま = へこみを作らない）
+
+  function parenDepth(s) {
+    var d = 0;
+    for (var i = 0; i < s.length; i++) {
+      if (s[i] === '(') d++;
+      else if (s[i] === ')') d--;
+    }
+    return d;
+  }
+
+  function tokenTree(src) {
+    var re = /\(|\)|\[[^\]]*\]|[^\s()\[\]]+/g;
+    var stack = [[]];
+    var m;
+    while ((m = re.exec(src))) {
+      var t = m[0];
+      if (t === '(') stack.push([]);
+      else if (t === ')') {
+        if (stack.length > 1) {
+          var l = stack.pop();
+          stack[stack.length - 1].push(l);
+        }
+      } else if (t[0] === '[') {
+        stack[stack.length - 1].push({
+          v: t.slice(1, -1).split(',').filter(function (s) { return s.trim() !== ''; }).map(Number)
+        });
+      } else stack[stack.length - 1].push(t);
+    }
+    return stack[0][0] || [];
+  }
+
+  function parseBrd(text) {
+    var lines = text.split(/\r?\n/);
+    var out = { scalars: {}, blocks: {}, raw: {}, order: [] };
+    var i = 0;
+    while (i < lines.length) {
+      var m = lines[i].match(/^\s*(\w+)\s*:\s*(.*)$/);
+      if (!m) { i++; continue; }
+      var key = m[1], val = m[2].trim();
+      if (val[0] === '(') {
+        var buf = val, depth = parenDepth(val);
+        i++;
+        while (depth > 0 && i < lines.length) {
+          buf += '\n' + lines[i];
+          depth += parenDepth(lines[i]);
+          i++;
+        }
+        out.blocks[key] = tokenTree(buf);
+        out.raw[key] = buf;
+      } else {
+        out.scalars[key] = val;
+        i++;
+      }
+      out.order.push(key);
+    }
+    return out;
+  }
+
+  function knotFrom(L) {
+    var v = L[1] && L[1].v;
+    if (!v || v.length < 6) return null;
+    return { x: v[0], y: v[1], t1: [v[2], v[3]], t2: [v[4], v[5]], cont: L[2] === 'true', other: L[3] === 'true' };
+  }
+
+  function readCurve(list) {
+    var knots = [], guides = [];
+    if (!list) return { knots: knots, guides: guides };
+    for (var i = 0; i < list.length; i++) {
+      var it = list[i];
+      if (Array.isArray(it) && it[0] === 'cp') {
+        var k = knotFrom(it);
+        if (k) knots.push(k);
+      } else if (it === 'gps') {
+        for (var j = i + 1; j < list.length; j++) {
+          if (Array.isArray(list[j])) {
+            list[j].forEach(function (gp) {
+              if (Array.isArray(gp) && gp[0] === 'gp' && gp[1] && gp[1].v) guides.push(gp[1].v);
+            });
+            i = j;
+            break;
+          }
+        }
+      }
+    }
+    return { knots: knots, guides: guides };
+  }
+
+  function readSections(list) {
+    var out = [];
+    if (!list) return out;
+    list.forEach(function (it) {
+      if (Array.isArray(it) && it[0] === 'p36') {
+        var knots = it.slice(2)
+          .filter(function (x) { return Array.isArray(x) && x[0] === 'cp'; })
+          .map(knotFrom).filter(Boolean);
+        out.push({ pos: parseFloat(it[1]), knots: knots });
+      }
+    });
+    return out.sort(function (a, b) { return a.pos - b.pos; });
+  }
+
+  function bez(p0, p1, p2, p3, t) {
+    var u = 1 - t, a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t;
+    return [a * p0[0] + b * p1[0] + c * p2[0] + d * p3[0],
+            a * p0[1] + b * p1[1] + c * p2[1] + d * p3[1]];
+  }
+
+  function sampleCurve(knots, n) {
+    n = n || 60;
+    var pts = [];
+    for (var i = 0; i < knots.length - 1; i++) {
+      var a = knots[i], b = knots[i + 1];
+      for (var j = i ? 1 : 0; j <= n; j++) {
+        pts.push(bez([a.x, a.y], a.t2, b.t1, [b.x, b.y], j / n));
+      }
+    }
+    if (knots.length === 1) pts.push([knots[0].x, knots[0].y]);
+    return pts;
+  }
+
+  // x での y 値（複数あれば mode で max / min を選ぶ）
+  function valueAt(poly, x, mode) {
+    var best = null;
+    for (var i = 1; i < poly.length; i++) {
+      var a = poly[i - 1], b = poly[i];
+      var lo = Math.min(a[0], b[0]), hi = Math.max(a[0], b[0]);
+      if (x < lo || x > hi || hi - lo < 1e-9) continue;
+      var y = a[1] + (b[1] - a[1]) * (x - a[0]) / (b[0] - a[0]);
+      if (best === null || (mode === 'min' ? y < best : y > best)) best = y;
+    }
+    if (best !== null) return best;
+    var near = poly[0];
+    poly.forEach(function (p) { if (Math.abs(p[0] - x) < Math.abs(near[0] - x)) near = p; });
+    return near[1];
+  }
+
+  function resample(poly, n) {
+    var c = [0];
+    for (var i = 1; i < poly.length; i++) {
+      c.push(c[i - 1] + Math.hypot(poly[i][0] - poly[i - 1][0], poly[i][1] - poly[i - 1][1]));
+    }
+    var tot = c[c.length - 1] || 1, out = [], k = 1;
+    for (var s = 0; s < n; s++) {
+      var t = tot * s / (n - 1);
+      while (k < poly.length - 1 && c[k] < t) k++;
+      var a = poly[k - 1], b = poly[k], seg = c[k] - c[k - 1];
+      var f = seg > 0 ? Math.min(1, Math.max(0, (t - c[k - 1]) / seg)) : 0;
+      out.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]);
+    }
+    return out;
+  }
+
+  function defaultShape() {
+    var r = [];
+    for (var i = 0; i < NS; i++) {
+      var a = Math.PI * i / (NS - 1);
+      r.push([Math.sqrt(Math.sin(a)), (1 - Math.cos(a)) / 2]);
+    }
+    return r;
+  }
+
+  // 断面を「幅 1・厚さ 1」に正規化
+  function prepSections(sections) {
+    return sections.map(function (s) {
+      if (s.knots.length < 2) return null;
+      var poly = sampleCurve(s.knots, 80);
+      var w = Math.max.apply(null, poly.map(function (q) { return q[0]; }));
+      var top = poly[poly.length - 1][1];
+      if (w < 0.05 || top < 0.05) return null;
+      var pts = resample(poly, NS).map(function (q) { return [q[0] / w, q[1] / top]; });
+      pts[0][0] = 0;
+      pts[NS - 1][0] = 0;
+      return { pos: s.pos, pts: pts };
+    }).filter(Boolean);
+  }
+
+  function ring(half) {
+    var r = half.map(function (q) { return [q[0], q[1]]; });
+    for (var j = half.length - 2; j >= 1; j--) r.push([-half[j][0], half[j][1]]);
+    return r;
+  }
+
+  function polyArea(pts) {
+    var a = 0;
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i], q = pts[(i + 1) % pts.length];
+      a += p[0] * q[1] - q[0] * p[1];
+    }
+    return Math.abs(a) / 2;
+  }
+
+  // 行き過ぎ（波打ち）のない 3 次補間。P = [[u, 値], ...]
+  function pchip(P) {
+    var n = P.length;
+    if (n === 1) return function () { return P[0][1]; };
+    var dx = [], dl = [], m = [0], k;
+    for (k = 0; k < n - 1; k++) {
+      dx.push(Math.max(1e-9, P[k + 1][0] - P[k][0]));
+      dl.push((P[k + 1][1] - P[k][1]) / dx[k]);
+    }
+    for (k = 1; k < n - 1; k++) {
+      if (dl[k - 1] * dl[k] <= 0) m.push(0);
+      else {
+        var w1 = 2 * dx[k] + dx[k - 1], w2 = dx[k] + 2 * dx[k - 1];
+        m.push((w1 + w2) / (w1 / dl[k - 1] + w2 / dl[k]));
+      }
+    }
+    m.push(0);
+    return function (u) {
+      if (u <= P[0][0]) return P[0][1];
+      if (u >= P[n - 1][0]) return P[n - 1][1];
+      var j = 0;
+      while (j < n - 2 && u > P[j + 1][0]) j++;
+      var h = dx[j], t = (u - P[j][0]) / h, t2 = t * t, t3 = t2 * t;
+      return (2 * t3 - 3 * t2 + 1) * P[j][1] + (t3 - 2 * t2 + t) * h * m[j]
+           + (-2 * t3 + 3 * t2) * P[j + 1][1] + (t3 - t2) * h * m[j + 1];
+    };
+  }
+
+  /*
+   * 正規化した半断面（幅 1・厚さ 1、ボトム中心 → レール → デッキ中心）を変形する。
+   * 幅（レールの一番外）と中心の厚さは変えない。T は実際の厚さ(cm)。
+   */
+  function deformSection(pts, p, T) {
+    var n = pts.length, ia = 0, i;
+    for (i = 1; i < n; i++) if (pts[i][0] > pts[ia][0]) ia = i;
+    var sA = ia / (n - 1), yA = pts[ia][1];
+    var out = pts.map(function (q) { return [q[0], q[1]]; });
+    // 2. レールの高さ: 高さ y を「順番の入れ替わらない」なめらかな対応で付け替える
+    //    （ボトム 0 と デッキ中心 1 は動かさず、レールの一番外の高さ yA だけを上下させる）
+    var yA2 = yA;
+    if (p.b) {
+      yA2 = Math.min(0.85, Math.max(0.08, yA + p.b * RAIL_B));
+      // ボトムより下（コンケーブ部分）とデッキより上はほぼそのまま（-1 と 2 を固定点に入れる）
+      var mapY = pchip([[-1, -1], [0, 0], [yA, yA2], [1, 1], [2, 2]]);
+      out = out.map(function (q) { return [q[0], mapY(q[1])]; });
+    }
+    for (i = 0; i < n; i++) {
+      var s = i / (n - 1), x = out[i][0], y = out[i][1];
+      // 1. デッキの丸み: デッキ中心からの下がり具合 r (0〜1) を r + a・0.85・r(1−r) に付け替える
+      //    順番が入れ替わらず、中心の傾きも有限なので、とがりやへこみはできない。中心とレールの一番外は動かない
+      if (i > ia && p.a) {
+        var drop = 1 - yA2, r = drop > 1e-6 ? Math.min(1, Math.max(0, (1 - y) / drop)) : 0;
+        y = 1 - drop * (r + p.a * 0.85 * r * (1 - r));
+      }
+      // 3. レールの形: ポイントより上は c、下は g で変える（+ はふっくら・エッジが立つ、- は絞る・丸い）
+      //    レールに近い外側（x > 0.72）だけ、横方向を t + k・0.9・t^3(1−t) に付け替える。
+      //    順番は入れ替わらず、境目では傾きも曲がり具合もつながる。ポイント（レールの一番外）は動かない
+      var kc = i > ia ? p.c : i < ia ? (p.g || 0) : 0;
+      if (kc && x > 0.72) {
+        var t = (x - 0.72) / 0.28;
+        x = 0.72 + 0.28 * (t + kc * 0.9 * t * t * t * (1 - t));
+      }
+      // 4. ボトム
+      //    シングルコンケーブ(d+): レール側が下がる（中心がくぼむ）
+      //    V ボトム(d-): レール側が上がる
+      //    ダブルコンケーブ(e): 中心とレールの縁は動かさず、その間の左右 2 本がくぼむ
+      //    シングル / V はレールも一緒に動かし、デッキ側に向かってなだらかに 0 に戻す（段差を作らない）
+      if (i <= ia && p.e > 0 && T > 0.01) {
+        var en = Math.min(0.25, p.e / T), rd = out[i][0] / 0.9;
+        if (rd < 1) y += en * Math.pow(Math.sin(Math.PI * rd), 2);
+      }
+      if (p.d && T > 0.01) {
+        var dn = Math.max(-0.25, Math.min(0.25, p.d / T)), rr = Math.min(1, out[i][0] / 0.9);
+        if (i <= ia) {
+          // シングルはレール手前で平らに戻る形、V ボトムは中心からレールまでまっすぐ（折れ目を作らない）
+          var q = p.d > 0 ? Math.pow(Math.sin(Math.PI / 2 * rr), 2) : out[i][0];
+          y -= dn * q;
+        } else {
+          // デッキ側: 中心からの下がり具合に比例させる（レールで全量、デッキ中心で 0。デッキの順番は保たれる）
+          var drop2 = 1 - yA2, r2 = drop2 > 1e-6 ? Math.min(1, Math.max(0, (1 - y) / drop2)) : 0;
+          y -= dn * r2;
+        }
+      }
+      out[i][0] = x;
+      out[i][1] = y;
+    }
+    // 中心（ボトム・デッキ）は動かさない
+    out[0] = [0, pts[0][1]];
+    out[n - 1] = [0, pts[n - 1][1]];
+    return out;
+  }
+
+  function lerp2(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
+
+  // ベジェを t で 2 つに分ける（形は変わらない）
+  function splitBez(c, t) {
+    var p01 = lerp2(c[0], c[1], t), p12 = lerp2(c[1], c[2], t), p23 = lerp2(c[2], c[3], t);
+    var p012 = lerp2(p01, p12, t), p123 = lerp2(p12, p23, t), p = lerp2(p012, p123, t);
+    return [[c[0], p01, p012, p], [p, p123, p23, c[3]]];
+  }
+
+  function cloneKnot(k) {
+    return { x: k.x, y: k.y, t1: k.t1.slice(), t2: k.t2.slice(), cont: k.cont, other: k.other, added: k.added };
+  }
+
+  // i 番目の区間を t で 2 つに分ける（元の形はそのまま）
+  function splitSegment(knots, i, t) {
+    var a = knots[i], b = knots[i + 1];
+    var parts = splitBez([[a.x, a.y], a.t2, b.t1, [b.x, b.y]], t == null ? 0.5 : t);
+    var na = cloneKnot(a), nb = cloneKnot(b);
+    na.t2 = parts[0][1]; nb.t1 = parts[1][2];
+    var mid = { x: parts[0][3][0], y: parts[0][3][1], t1: parts[0][2], t2: parts[1][1], cont: true, other: false, added: true };
+    return knots.slice(0, i).concat([na, mid, nb], knots.slice(i + 2));
+  }
+
+  // x = X になる位置で区間を分けた制御点の列を返す（X が区間内になければそのまま）
+  function splitAtX(knots, X) {
+    for (var i = 0; i < knots.length - 1; i++) {
+      var a = knots[i], b = knots[i + 1];
+      if (Math.abs(b.x - a.x) < 0.5 || X <= Math.min(a.x, b.x) + 1 || X >= Math.max(a.x, b.x) - 1) continue;
+      var lo = 0, hi = 1, inc = b.x > a.x;
+      for (var k = 0; k < 40; k++) {
+        var m = (lo + hi) / 2, xm = bez([a.x, a.y], a.t2, b.t1, [b.x, b.y], m)[0];
+        if ((xm < X) === inc) lo = m; else hi = m;
+      }
+      return splitSegment(knots, i, (lo + hi) / 2);
+    }
+    return knots;
+  }
+
+  // 平面の変換 fn を制御点とハンドルに当てる（ハンドルは接線の向きが合うよう局所的に変換）
+  function mapKnots(knots, fn, eps) {
+    eps = eps || 0.05;
+    return knots.map(function (k) {
+      var p = fn(k.x, k.y);
+      var px1 = fn(k.x + eps, k.y), px0 = fn(k.x - eps, k.y);
+      var py1 = fn(k.x, k.y + eps), py0 = fn(k.x, k.y - eps);
+      var J = [[(px1[0] - px0[0]) / (2 * eps), (py1[0] - py0[0]) / (2 * eps)],
+               [(px1[1] - px0[1]) / (2 * eps), (py1[1] - py0[1]) / (2 * eps)]];
+      function h(t) {
+        var dx = t[0] - k.x, dy = t[1] - k.y;
+        return [p[0] + J[0][0] * dx + J[0][1] * dy, p[1] + J[1][0] * dx + J[1][1] * dy];
+      }
+      return { x: p[0], y: p[1], t1: h(k.t1), t2: h(k.t2), cont: k.cont, other: k.other, added: k.added };
+    });
+  }
+
+  /*
+   * 元の制御点の数のまま変換してみて、目標の形 targetY(X) からのずれが tol(cm) を超える区間だけ
+   * 真ん中に点を 1 つ足す、をくり返す。必要な所にだけ点が増える。
+   */
+  // 区間 a→b のハンドルの向きはそのまま、長さだけを目標の形に最もよく合うよう選び直す（最小二乗）
+  function fitHandles(a, b, targetY) {
+    var P0 = [a.x, a.y], P3 = [b.x, b.y];
+    var d0 = [a.t2[0] - a.x, a.t2[1] - a.y], d3 = [b.t1[0] - b.x, b.t1[1] - b.y];
+    var l0 = Math.hypot(d0[0], d0[1]), l3 = Math.hypot(d3[0], d3[1]);
+    if (l0 < 1e-9 || l3 < 1e-9 || Math.abs(b.x - a.x) < 0.5) return;
+    d0 = [d0[0] / l0, d0[1] / l0]; d3 = [d3[0] / l3, d3[1] / l3];
+    // 目標の形の点を並べ、弧の長さで t を割り当てる
+    var M = 24, Q = [], c = [0], j;
+    for (j = 0; j <= M; j++) { var X = a.x + (b.x - a.x) * j / M; Q.push([X, targetY(X)]); }
+    Q[0] = P0; Q[M] = P3;
+    for (j = 1; j <= M; j++) c.push(c[j - 1] + Math.hypot(Q[j][0] - Q[j - 1][0], Q[j][1] - Q[j - 1][1]));
+    var T = c.map(function (v) { return v / c[M]; });
+    var best = null;
+    for (var pass = 0; pass < 4; pass++) {
+      var C00 = 0, C01 = 0, C11 = 0, X0 = 0, X1 = 0;
+      for (j = 1; j < M; j++) {
+        var t = T[j], u = 1 - t, b0 = u * u * u, b1 = 3 * u * u * t, b2 = 3 * u * t * t, b3 = t * t * t;
+        var A1 = [d0[0] * b1, d0[1] * b1], A2 = [d3[0] * b2, d3[1] * b2];
+        var r = [Q[j][0] - (P0[0] * (b0 + b1) + P3[0] * (b2 + b3)), Q[j][1] - (P0[1] * (b0 + b1) + P3[1] * (b2 + b3))];
+        C00 += A1[0] * A1[0] + A1[1] * A1[1]; C01 += A1[0] * A2[0] + A1[1] * A2[1]; C11 += A2[0] * A2[0] + A2[1] * A2[1];
+        X0 += A1[0] * r[0] + A1[1] * r[1]; X1 += A2[0] * r[0] + A2[1] * r[1];
+      }
+      var det = C00 * C11 - C01 * C01;
+      if (Math.abs(det) < 1e-12) return;
+      var al = (X0 * C11 - X1 * C01) / det, be = (C00 * X1 - C01 * X0) / det;
+      var chord = Math.hypot(P3[0] - P0[0], P3[1] - P0[1]);
+      if (!(al > chord * 0.02 && be > chord * 0.02 && al < chord && be < chord)) break;   // おかしな値なら使わない
+      best = [al, be];
+      // t を合わせ直す（ニュートン法 1 回）
+      var P1 = [P0[0] + d0[0] * al, P0[1] + d0[1] * al], P2 = [P3[0] + d3[0] * be, P3[1] + d3[1] * be];
+      for (j = 1; j < M; j++) {
+        var tt = T[j], uu = 1 - tt;
+        var B = bez(P0, P1, P2, P3, tt);
+        var D1 = [3 * uu * uu * (P1[0] - P0[0]) + 6 * uu * tt * (P2[0] - P1[0]) + 3 * tt * tt * (P3[0] - P2[0]),
+                  3 * uu * uu * (P1[1] - P0[1]) + 6 * uu * tt * (P2[1] - P1[1]) + 3 * tt * tt * (P3[1] - P2[1])];
+        var D2 = [6 * uu * (P2[0] - 2 * P1[0] + P0[0]) + 6 * tt * (P3[0] - 2 * P2[0] + P1[0]),
+                  6 * uu * (P2[1] - 2 * P1[1] + P0[1]) + 6 * tt * (P3[1] - 2 * P2[1] + P1[1])];
+        var dx = B[0] - Q[j][0], dy = B[1] - Q[j][1];
+        var num1 = dx * D1[0] + dy * D1[1], den = D1[0] * D1[0] + D1[1] * D1[1] + dx * D2[0] + dy * D2[1];
+        if (Math.abs(den) > 1e-12) T[j] = Math.min(1, Math.max(0, tt - num1 / den));
+      }
+    }
+    if (!best) return;
+    a.t2 = [a.x + d0[0] * best[0], a.y + d0[1] * best[0]];
+    b.t1 = [b.x + d3[0] * best[1], b.y + d3[1] * best[1]];
+  }
+
+  // 区間 a→b のハンドルの向きはそのまま、長さを点列 Q（a から b まで）に一番合うよう選び直す
+  function fitHandlesToPoints(a, b, Q) {
+    var M = Q.length - 1;
+    if (M < 2) return;
+    var P0 = [a.x, a.y], P3 = [b.x, b.y];
+    var d0 = [a.t2[0] - a.x, a.t2[1] - a.y], d3 = [b.t1[0] - b.x, b.t1[1] - b.y];
+    var l0 = Math.hypot(d0[0], d0[1]), l3 = Math.hypot(d3[0], d3[1]);
+    if (l0 < 1e-9 || l3 < 1e-9) return;
+    d0 = [d0[0] / l0, d0[1] / l0]; d3 = [d3[0] / l3, d3[1] / l3];
+    var c = [0], j;
+    for (j = 1; j <= M; j++) c.push(c[j - 1] + Math.hypot(Q[j][0] - Q[j - 1][0], Q[j][1] - Q[j - 1][1]));
+    var C00 = 0, C01 = 0, C11 = 0, X0 = 0, X1 = 0;
+    for (j = 1; j < M; j++) {
+      var t = c[j] / c[M], u = 1 - t, b0 = u * u * u, b1 = 3 * u * u * t, b2 = 3 * u * t * t, b3 = t * t * t;
+      var A1 = [d0[0] * b1, d0[1] * b1], A2 = [d3[0] * b2, d3[1] * b2];
+      var r = [Q[j][0] - (P0[0] * (b0 + b1) + P3[0] * (b2 + b3)), Q[j][1] - (P0[1] * (b0 + b1) + P3[1] * (b2 + b3))];
+      C00 += A1[0] * A1[0] + A1[1] * A1[1]; C01 += A1[0] * A2[0] + A1[1] * A2[1]; C11 += A2[0] * A2[0] + A2[1] * A2[1];
+      X0 += A1[0] * r[0] + A1[1] * r[1]; X1 += A2[0] * r[0] + A2[1] * r[1];
+    }
+    var det = C00 * C11 - C01 * C01;
+    if (Math.abs(det) < 1e-12) return;
+    var al = (X0 * C11 - X1 * C01) / det, be = (C00 * X1 - C01 * X0) / det;
+    var chord = Math.hypot(P3[0] - P0[0], P3[1] - P0[1]);
+    if (!(al > chord * 0.02 && be > chord * 0.02 && al < chord * 1.2 && be < chord * 1.2)) return;
+    a.t2 = [a.x + d0[0] * al, a.y + d0[1] * al];
+    b.t1 = [b.x + d3[0] * be, b.y + d3[1] * be];
+  }
+
+  function segError(a, b, targetY) {
+    var e = 0;
+    if (Math.abs(b.x - a.x) < 0.5) return 0;   // 先端の縦の区間は比べない
+    for (var j = 1; j < 20; j++) {
+      var q = bez([a.x, a.y], a.t2, b.t1, [b.x, b.y], j / 20);
+      e = Math.max(e, Math.abs(q[1] - targetY(q[0])));
+    }
+    return e;
+  }
+
+  // 区間ごとのハンドルの長さと、点でのハンドルの向き（前後で同じ向きのまま）を、新しい形に合うよう調整する
+  function tuneKnots(ks, targetY) {
+    var i, k;
+    function fitSeg(i) {
+      var ca = cloneKnot(ks[i]), cb = cloneKnot(ks[i + 1]);
+      fitHandles(ca, cb, targetY);
+      if (segError(ca, cb, targetY) < segError(ks[i], ks[i + 1], targetY)) { ks[i].t2 = ca.t2; ks[i + 1].t1 = cb.t1; }
+    }
+    for (i = 0; i < ks.length - 1; i++) fitSeg(i);
+    function rot(p, c, ang) {
+      var dx = p[0] - c.x, dy = p[1] - c.y, cs = Math.cos(ang), sn = Math.sin(ang);
+      return [c.x + dx * cs - dy * sn, c.y + dx * sn + dy * cs];
+    }
+    function localErr(k) {
+      var e = 0;
+      if (k > 0) e = Math.max(e, segError(ks[k - 1], ks[k], targetY));
+      if (k < ks.length - 1) e = Math.max(e, segError(ks[k], ks[k + 1], targetY));
+      return e;
+    }
+    var steps = [3, 1, 0.3].map(function (d) { return d * Math.PI / 180; });
+    for (var pass = 0; pass < 3; pass++) {
+      for (k = 0; k < ks.length; k++) {
+        steps.forEach(function (st) {
+          [st, -st].forEach(function (ang) {
+            var save = ks.slice(Math.max(0, k - 1), k + 2).map(cloneKnot);
+            var before = localErr(k);
+            if (k > 0) ks[k].t1 = rot(ks[k].t1, ks[k], ang);
+            if (k < ks.length - 1) ks[k].t2 = rot(ks[k].t2, ks[k], ang);
+            if (k > 0) fitSeg(k - 1);
+            if (k < ks.length - 1) fitSeg(k);
+            if (localErr(k) >= before) save.forEach(function (sk, j) { ks[Math.max(0, k - 1) + j] = sk; });
+          });
+        });
+      }
+    }
+    return ks;
+  }
+
+  function num(n) {
+    n = Math.round(n * 1e9) / 1e9;
+    if (n === 0) return '0.0';
+    return Number.isInteger(n) ? n.toFixed(1) : String(n);
+  }
+
+  function cpLine(k) {
+    return '(cp [' + [k.x, k.y, k.t1[0], k.t1[1], k.t2[0], k.t2[1]].map(num).join(',') + '] '
+      + (k.cont ? 'true' : 'false') + ' ' + (k.other ? 'true' : 'false') + ')';
+  }
+
+  function curveBlock(key, knots) {
+    return key + ' : (\n' + knots.map(cpLine).join('\n') + '\n)';
+  }
+
+  function arcLength(knots) {
+    var pts = sampleCurve(knots, 80), s = 0;
+    for (var i = 1; i < pts.length; i++) s += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    return s;
+  }
+
+  // 計算した断面（折れ線）を BoardCAD の断面（ベジェ）にする。
+  // 点は元の断面と同じ 5 つ: ボトム中心・ボトムとレールの間・レールの一番外・レールとデッキの間・デッキ中心
+  // tol を渡したとき（形を変えた断面）は、ずれが tol(cm) を超える区間に点を足す
+  function sectionKnots(half, tol) {
+    var n = half.length, ia = 0, i;
+    for (i = 1; i < n; i++) if (half[i][0] > half[ia][0]) ia = i;
+    // 点は 5 つ: ボトム中心・アンダーエッジ・ポイント・レール上側・デッキ中心。
+    // アンダーエッジ = ポイントからボトム側へたどって、線がほぼ水平（4° 未満）になる所（タックが始まる直前 = ボトムとレールの境目）
+    // レール上側の点 = ポイントからデッキ側へたどって、線の傾きが 15° 未満になる所（レールからデッキに変わる所）
+    function slopeDeg(i) {
+      var a = half[Math.max(0, i - 1)], b = half[Math.min(n - 1, i + 1)];
+      return Math.atan2(Math.abs(b[1] - a[1]), Math.abs(b[0] - a[0]) || 1e-9) * 180 / Math.PI;
+    }
+    var iE = Math.round(ia * 0.7);
+    for (i = ia - 1; i > 0; i--) if (slopeDeg(i) < 4) { iE = i; break; }
+    var iU = Math.round(ia + (n - 1 - ia) * 0.35);
+    for (i = ia + 1; i < n - 1; i++) if (slopeDeg(i) < 15) { iU = i; break; }
+    var idx = [0, Math.max(1, iE), ia, Math.min(n - 2, iU), n - 1]
+      .filter(function (v, k, arr) { return arr.indexOf(v) === k; }).sort(function (x, y) { return x - y; });
+    function dir(i) {
+      if (i === 0) return [1, 0];
+      if (i === n - 1) return [-1, 0];
+      var dx = half[i + 1][0] - half[i - 1][0], dy = half[i + 1][1] - half[i - 1][1], l = Math.hypot(dx, dy) || 1;
+      return [dx / l, dy / l];
+    }
+    function build() {
+    var ks = idx.map(function (i, k) {
+      var p = half[i], d = dir(i);
+      var lp = k > 0 ? Math.hypot(p[0] - half[idx[k - 1]][0], p[1] - half[idx[k - 1]][1]) / 3 : 0;
+      var ln = k < idx.length - 1 ? Math.hypot(half[idx[k + 1]][0] - p[0], half[idx[k + 1]][1] - p[1]) / 3 : 0;
+      if (k === 0) lp = ln;
+      if (k === idx.length - 1) ln = lp;
+      return { x: p[0], y: p[1], t1: [p[0] - d[0] * lp, p[1] - d[1] * lp], t2: [p[0] + d[0] * ln, p[1] + d[1] * ln], cont: true, other: false };
+    });
+    // 各区間のハンドルの長さを、その区間の折れ線に一番合うよう選び直す
+    for (var k = 0; k < ks.length - 1; k++) {
+      var seg = half.slice(idx[k], idx[k + 1] + 1);
+      fitHandlesToPoints(ks[k], ks[k + 1], seg);
+    }
+    return ks;
+    }
+    function segDist(pt, a, b) {
+      var vx = b[0] - a[0], vy = b[1] - a[1], l2 = vx * vx + vy * vy || 1;
+      var t = Math.max(0, Math.min(1, ((pt[0] - a[0]) * vx + (pt[1] - a[1]) * vy) / l2));
+      return Math.hypot(pt[0] - a[0] - t * vx, pt[1] - a[1] - t * vy);
+    }
+    var out = build();
+    if (!tol) return out;
+    for (var iter = 0; iter < 15; iter++) {
+      var worst = -1, werr = tol;
+      for (var k2 = 0; k2 < out.length - 1; k2++) {
+        if (idx[k2 + 1] - idx[k2] < 2) continue;
+        var a = out[k2], b = out[k2 + 1];
+        for (var j = 1; j < 16; j++) {
+          var q = bez([a.x, a.y], a.t2, b.t1, [b.x, b.y], j / 16), m = Infinity;
+          for (i = idx[k2]; i < idx[k2 + 1]; i++) m = Math.min(m, segDist(q, half[i], half[i + 1]));
+          if (m > werr) { werr = m; worst = k2; }
+        }
+      }
+      if (worst < 0) break;
+      idx.splice(worst + 1, 0, Math.round((idx[worst] + idx[worst + 1]) / 2));
+      out = build();
+    }
+    return out;
+  }
+
+  // 連立一次方程式（部分ピボット付きガウス消去）
+  function solveLinear(A, b) {
+    var n = b.length, i, j, k;
+    var M = A.map(function (row, r) { return row.concat([b[r]]); });
+    for (k = 0; k < n; k++) {
+      var piv = k;
+      for (i = k + 1; i < n; i++) if (Math.abs(M[i][k]) > Math.abs(M[piv][k])) piv = i;
+      if (Math.abs(M[piv][k]) < 1e-14) return null;
+      var tmp = M[k]; M[k] = M[piv]; M[piv] = tmp;
+      for (i = k + 1; i < n; i++) {
+        var f = M[i][k] / M[k][k];
+        if (!f) continue;
+        for (j = k; j <= n; j++) M[i][j] -= f * M[k][j];
+      }
+    }
+    var x = new Array(n);
+    for (i = n - 1; i >= 0; i--) {
+      var sum = M[i][n];
+      for (j = i + 1; j < n; j++) sum -= M[i][j] * x[j];
+      x[i] = sum / M[i][i];
+    }
+    return x;
+  }
+
+  function gridAt(arr, u) {
+    var t = Math.min(1, Math.max(0, u)) * RGRID, i = Math.min(RGRID - 1, Math.floor(t)), f = t - i;
+    return arr[i] + (arr[i + 1] - arr[i]) * f;
+  }
+
+  function solveSide(Bo, kap, iA, iB, rows) {
+    var N = RGRID, h = 1 / N, uA = iA / N, uB = iB / N, i, j;
+    // 倍率を決める点: 両端・条件の点・約 0.08 ごとの点
+    var knots = [uA, uB];
+    rows.forEach(function (rw) { knots.push(rw[0]); });
+    var steps = Math.max(1, Math.round((uB - uA) / 0.08));
+    for (j = 1; j < steps; j++) knots.push(uA + (uB - uA) * j / steps);
+    knots.sort(function (a, b) { return a - b; });
+    knots = knots.filter(function (k, idx) { return idx === 0 || k - knots[idx - 1] > 0.012; });
+    if (knots[knots.length - 1] < uB - 1e-9) knots[knots.length - 1] = uB;
+    var K = knots.length;
+    function hat(jj, u) {
+      var c = knots[jj], l = jj > 0 ? knots[jj - 1] : null, r = jj < K - 1 ? knots[jj + 1] : null;
+      if (Math.abs(u - c) < 1e-12) return 1;
+      if (u < c) return l === null ? 1 : (u <= l ? 0 : (u - l) / (c - l));
+      return r === null ? 1 : (u >= r ? 0 : (r - u) / (r - c));
+    }
+    var Phi = [], dPhi = [];
+    for (j = 0; j < K; j++) {
+      var F1 = new Array(N + 1).fill(0), F2 = new Array(N + 1).fill(0), gPrev = hat(j, uA) * kap[iA];
+      for (i = iA + 1; i <= iB; i++) {
+        var gi = hat(j, i / N) * kap[i];
+        F1[i] = F1[i - 1] + (gi + gPrev) * h / 2;
+        F2[i] = F2[i - 1] + (F1[i] + F1[i - 1]) * h / 2;
+        gPrev = gi;
+      }
+      Phi.push(F2); dPhi.push(F1);
+    }
+    var fixed = {};
+    for (var iter = 0; iter <= K; iter++) {
+      var fixedIdx = Object.keys(fixed).map(Number);
+      var nv = K + 2, nc = rows.length + fixedIdx.length, n = nv + nc;
+      var A = [], r = [];
+      for (i = 0; i < n; i++) { A.push(new Array(n).fill(0)); r.push(0); }
+      A[0][0] = 1e-9; A[1][1] = 1e-9;
+      // 目的: Σ(c-1)^2 + 4 Σ(c_j+1 - c_j)^2
+      for (j = 0; j < K; j++) { A[2 + j][2 + j] += 1; r[2 + j] = 1; }
+      for (j = 0; j < K - 1; j++) {
+        A[2 + j][2 + j] += 4; A[3 + j][3 + j] += 4;
+        A[2 + j][3 + j] -= 4; A[3 + j][2 + j] -= 4;
+      }
+      var row = nv;
+      rows.forEach(function (rw) {
+        var coef = rw[2] ? [0, 1] : [1, rw[0] - uA];
+        for (var jj = 0; jj < K; jj++) coef.push(gridAt(rw[2] ? dPhi[jj] : Phi[jj], rw[0]));
+        coef.forEach(function (v, col) { A[row][col] = v; A[col][row] = v; });
+        r[row] = rw[1];
+        row++;
+      });
+      fixedIdx.forEach(function (jj) { A[row][2 + jj] = 1; A[2 + jj][row] = 1; r[row] = C_MIN; row++; });
+      var z = solveLinear(A, r);
+      if (!z) return null;
+      var added = false;
+      for (j = 0; j < K; j++) if (!fixed[j] && z[2 + j] < C_MIN - 1e-9) { fixed[j] = true; added = true; }
+      if (!added) {
+        var out = {};
+        for (i = iA; i <= iB; i++) {
+          var v = z[0] + z[1] * (i / N - uA);
+          for (j = 0; j < K; j++) v += z[2 + j] * Phi[j][i];
+          out[i] = v;
+        }
+        var cs = z.slice(2, 2 + K);
+        return { B: out, ok: cs.every(function (c) { return c >= C_MIN - 1e-6 && c <= C_MAX; }) };
+      }
+    }
+    return null;
+  }
+
+  /*
+   * アウトライン（半幅）を作り直す。考え方はロッカーと同じ。
+   *  - 一番幅の広い所から離れた所を直したときは、一番広い所（幅と傾き 0）を保ち、反対側は変えない。
+   *  - 一番広い所の近く（±12%）を直したときは、先端から先端までを 1 本のカーブで作り直す。
+   *  - テール・ノーズの先端のごく近く（全長の 3%）は元の形のまま残し、境目で傾きもそろえる。
+   *  - その間を、元のアウトラインの曲がり方に場所ごとのプラスの倍率をかけたカーブで作り直す。
+   * cons の v は、全体の幅の倍率をかける前の半幅(cm)。
+   * 返り値: { W(u): 半幅, ok: なだらかなカーブで通せたか }
+   */
+  function buildOutline(base, cons) {
+    var Wo = [];
+    for (var i = 0; i <= RGRID; i++) Wo.push(base.at(i / RGRID).W);
+    return buildHump(Wo, cons);
+  }
+
+  // 厚さ（デッキ − ボトム）も同じ考え方で作り直す。v は全体の厚さの倍率をかける前の厚さ(cm)
+  function buildThick(base, cons) {
+    var To = [];
+    for (var i = 0; i <= RGRID; i++) To.push(base.at(i / RGRID).T);
+    return buildHump(To, cons);
+  }
+
+  // 真ん中あたりが一番大きくなる形（半幅・厚さ）の共通処理。Wo は元の値の格子
+  function buildHump(Wo, cons) {
+    var N = RGRID, h = 1 / N, i;
+    if (!cons || !cons.length) return { W: function (u) { return gridAt(Wo, u); }, ok: true };
+    var kap = new Array(N + 1);
+    for (i = 1; i < N; i++) kap[i] = (Wo[i + 1] - 2 * Wo[i] + Wo[i - 1]) / (h * h);
+    kap[0] = kap[1]; kap[N] = kap[N - 1];
+
+    var iW = Math.round(N * 0.1);
+    for (i = iW; i <= Math.round(N * 0.9); i++) if (Wo[i] > Wo[iW]) iW = i;
+    var uW = iW / N;
+    var minU = Math.min.apply(null, cons.map(function (c) { return c.u; }));
+    var maxU = Math.max.apply(null, cons.map(function (c) { return c.u; }));
+    // 先端の元の形を残す範囲。直した点が先端に近いときは狭める
+    var iT = Math.max(1, Math.round(N * Math.min(0.03, Math.max(0.004, minU - 0.04))));
+    var iN = Math.min(N - 1, Math.round(N * Math.max(0.97, Math.min(0.996, maxU + 0.04))));
+    var uT = iT / N, uN = iN / N;
+    var slope = function (k) { return (Wo[k + 1] - Wo[k - 1]) / (2 * h); };
+    var clampU = function (u) { return Math.min(uN - 0.005, Math.max(uT + 0.005, u)); };
+    var tipT = [[uT, Wo[iT], false], [uT, slope(iT), true]];
+    var tipN = [[uN, Wo[iN], false], [uN, slope(iN), true]];
+    var Wn = [], allOk;
+    if (cons.some(function (c) { return Math.abs(c.u - uW) < 0.12; })) {
+      // 一番広い所の近くを直したとき: 先端から先端までを 1 本のカーブで作り直す（一番広い所は自然に動く）
+      var rows = tipT.concat(tipN, cons.map(function (c) { return [clampU(c.u), c.v, false]; }));
+      var one = solveSide(Wo, kap, iT, iN, rows);
+      if (!one) return { W: function (u) { return gridAt(Wo, u); }, ok: false };
+      for (i = 0; i <= N; i++) Wn.push(i < iT || i > iN ? Wo[i] : one.B[i]);
+      allOk = one.ok;
+    } else {
+      // それ以外: 一番広い所（幅と傾き 0）を固定し、テール側・ノーズ側を別々に作り直す
+      var tailRows = tipT.concat([[uW, Wo[iW], false], [uW, 0, true]]);
+      var noseRows = [[uW, Wo[iW], false], [uW, 0, true]].concat(tipN);
+      cons.forEach(function (c) { var u = clampU(c.u); (u < uW ? tailRows : noseRows).push([u, c.v, false]); });
+      var tail = solveSide(Wo, kap, iT, iW, tailRows);
+      var nose = solveSide(Wo, kap, iW, iN, noseRows);
+      if (!tail || !nose) return { W: function (u) { return gridAt(Wo, u); }, ok: false };
+      for (i = 0; i <= N; i++) Wn.push(i < iT || i > iN ? Wo[i] : (i <= iW ? tail.B[i] : nose.B[i]));
+      allOk = tail.ok && nose.ok;
+    }
+    var hit = cons.every(function (c) { return Math.abs(gridAt(Wn, c.u) - c.v) < 0.02; });
+    var positive = Wn.every(function (w, k) { return w > 0 || Wo[k] <= 0.01; });
+    return { W: function (u) { return gridAt(Wn, u); }, ok: allOk && hit && positive };
+  }
+
+  function buildRocker(base, cons) {
+    var N = RGRID, h = 1 / N, i;
+    var Bo = [];
+    for (i = 0; i <= N; i++) Bo.push(base.at(i / N).B);
+    if (!cons || !cons.length) return { B: function (u) { return gridAt(Bo, u); }, ok: true };
+    var kap = new Array(N + 1);
+    for (i = 1; i < N; i++) kap[i] = (Bo[i + 1] - 2 * Bo[i] + Bo[i - 1]) / (h * h);
+    kap[0] = kap[1]; kap[N] = kap[N - 1];
+
+    var iF = Math.round(N * 0.1);
+    for (i = iF; i <= Math.round(N * 0.9); i++) if (Bo[i] < Bo[iF]) iF = i;
+    var uF = iF / N;
+    var pick = function (u, rr) {
+      var best = null;
+      cons.forEach(function (c) { if (Math.abs(c.u - u) < rr && (!best || Math.abs(c.u - u) < Math.abs(best.u - u))) best = c; });
+      return best;
+    };
+    var cT = pick(0, 0.02), cN = pick(1, 0.02), cF = pick(uF, 0.04);
+    var vT = cT ? cT.v : Bo[0], vN = cN ? cN.v : Bo[N], vF = cF ? cF.v : Bo[iF];
+    var mid = cons.filter(function (c) { return c !== cT && c !== cN && c !== cF; });
+    var tailRows = [[0, vT, false], [uF, vF, false], [uF, 0, true]];
+    var noseRows = [[uF, vF, false], [uF, 0, true], [1, vN, false]];
+    mid.forEach(function (c) { (c.u < uF ? tailRows : noseRows).push([c.u, c.v, false]); });
+    var tail = solveSide(Bo, kap, 0, iF, tailRows);
+    var nose = solveSide(Bo, kap, iF, N, noseRows);
+    if (!tail || !nose) return { B: function (u) { return gridAt(Bo, u); }, ok: false };
+    var Bn = [];
+    for (i = 0; i <= N; i++) Bn.push(i <= iF ? tail.B[i] : nose.B[i]);
+    // 指定した点をちゃんと通っているか
+    var hit = cons.every(function (c) { return Math.abs(gridAt(Bn, c.u) - c.v) < 0.02; });
+    return { B: function (u) { return gridAt(Bn, u); }, ok: tail.ok && nose.ok && hit };
+  }
+
+  /* ================= ドキュメント（ファイルの中身そのもの） =================
+   * doc = { p: 読み込んだ内容, outline / bottom / deck: 制御点の列, sections: [{pos, knots}] }
+   * アプリの形も、保存するファイルも、この doc の曲線そのもの（見たままが保存される）。
+   * 編集はすべて doc の点を動かす / 足すことで行う。
+   */
+
+  function docFromText(text) {
+    var p = parseBrd(text);
+    var o = readCurve(p.blocks.p32).knots, b = readCurve(p.blocks.p33).knots, d = readCurve(p.blocks.p34).knots;
+    if (o.length < 2 || b.length < 2 || d.length < 2) {
+      throw new Error('アウトライン・ボトム・デッキのカーブが見つかりません。BoardCAD 形式の .brd ファイルか確認してください。');
+    }
+    return { p: p, outline: o, bottom: b, deck: d, sections: readSections(p.blocks.p35) };
+  }
+
+  function cloneDoc(doc) {
+    return {
+      p: doc.p,
+      outline: doc.outline.map(cloneKnot), bottom: doc.bottom.map(cloneKnot), deck: doc.deck.map(cloneKnot),
+      sections: doc.sections.map(function (s) { return { pos: s.pos, knots: s.knots.map(cloneKnot) }; })
+    };
+  }
+
+  // 曲線が同じかどうかを比べるための文字列
+  function docKey(doc) {
+    var r = function (n) { return Math.round(n * 1e5); };
+    var kk = function (ks) { return ks.map(function (k) { return [k.x, k.y, k.t1[0], k.t1[1], k.t2[0], k.t2[1]].map(r).join(','); }).join(';'); };
+    return [kk(doc.outline), kk(doc.bottom), kk(doc.deck)].concat(doc.sections.map(function (s) { return r(s.pos) + ':' + kk(s.knots); })).join('|');
+  }
+
+  function docLength(doc) {
+    return Math.max.apply(null, doc.outline.map(function (k) { return k.x; }));
+  }
+
+  /* ---------- doc から形を計算する ---------- */
+
+  function baseFromDoc(doc) {
+    var oPoly = sampleCurve(doc.outline, 400);
+    var bPoly = sampleCurve(doc.bottom, 400);
+    var dPoly = sampleCurve(doc.deck, 400);
+    var secs = prepSections(doc.sections);
+    var L0 = docLength(doc);
+    if (!(L0 > 0)) L0 = parseFloat(doc.p.scalars.p01) || 1;
+
+    function shapeAt(x0) {
+      if (!secs.length) return defaultShape();
+      if (x0 <= secs[0].pos) return secs[0].pts;
+      var last = secs[secs.length - 1];
+      if (x0 >= last.pos) return last.pts;
+      for (var i = 0; i < secs.length - 1; i++) {
+        var a = secs[i], b = secs[i + 1];
+        if (x0 >= a.pos && x0 <= b.pos) {
+          var f = (x0 - a.pos) / ((b.pos - a.pos) || 1);
+          return a.pts.map(function (q, k) {
+            return [q[0] + (b.pts[k][0] - q[0]) * f, q[1] + (b.pts[k][1] - q[1]) * f];
+          });
+        }
+      }
+      return last.pts;
+    }
+
+    function at(u) {
+      var eps = Math.min(0.02, L0 / 1000);
+      var x0 = Math.min(L0 - eps, Math.max(eps, u * L0));
+      var W = Math.max(0, valueAt(oPoly, x0, 'max'));
+      var B = valueAt(bPoly, x0, 'min');
+      var D = valueAt(dPoly, x0, 'max');
+      return { x0: x0, W: W, B: B, T: Math.max(0, D - B) };
+    }
+
+    return {
+      L0: L0, doc: doc, version: doc.p.scalars.p07 || '',
+      oPoly: oPoly, bPoly: bPoly, dPoly: dPoly,
+      sectionCount: secs.length, shapeAt: shapeAt, at: at
+    };
+  }
+
+  function shape(base) {
+    var L = base.L0;
+    function core(u) {
+      var b = base.at(u);
+      return { u: u, x: u * L, W: b.W, B: b.B, T: b.T, D: b.B + b.T };
+    }
+    function station(x) {
+      var u = Math.min(1, Math.max(0, x / L));
+      var c = core(u);
+      var sh = base.shapeAt(base.at(u).x0);
+      c.half = sh.map(function (q) { return [q[0] * c.W, c.B + q[1] * c.T]; });
+      c.ring = ring(c.half);
+      return c;
+    }
+
+    var profile = [];
+    for (var i = 0; i < PROFILE; i++) profile.push(core((1 - Math.cos(Math.PI * i / (PROFILE - 1))) / 2));
+
+    var M = 2 * NS - 2;
+    var positions = new Float32Array((STATIONS * M + 2) * 3);
+    var indices = [];
+    var volume = 0, prevArea = null, prevX = null, yMin = Infinity, yMax = -Infinity;
+    for (var s = 0; s < STATIONS; s++) {
+      var st = station(L * (1 - Math.cos(Math.PI * s / (STATIONS - 1))) / 2);
+      for (var k = 0; k < M; k++) {
+        var q = st.ring[k], o = (s * M + k) * 3;
+        positions[o] = st.x; positions[o + 1] = q[1]; positions[o + 2] = q[0];
+        if (q[1] < yMin) yMin = q[1];
+        if (q[1] > yMax) yMax = q[1];
+      }
+      var area = polyArea(st.ring);
+      if (prevArea !== null) volume += (area + prevArea) / 2 * (st.x - prevX);
+      prevArea = area; prevX = st.x;
+    }
+    for (var s2 = 0; s2 < STATIONS - 1; s2++) {
+      for (var k2 = 0; k2 < M; k2++) {
+        var a = s2 * M + k2, b = s2 * M + (k2 + 1) % M, c = (s2 + 1) * M + k2, d = (s2 + 1) * M + (k2 + 1) % M;
+        indices.push(a, c, b, b, c, d);
+      }
+    }
+    [0, STATIONS - 1].forEach(function (s3, n) {
+      var ci = STATIONS * M + n, cx = 0, cy = 0, cz = 0;
+      for (var k3 = 0; k3 < M; k3++) {
+        var o3 = (s3 * M + k3) * 3;
+        cx += positions[o3]; cy += positions[o3 + 1]; cz += positions[o3 + 2];
+      }
+      positions[ci * 3] = cx / M; positions[ci * 3 + 1] = cy / M; positions[ci * 3 + 2] = cz / M;
+      for (var k4 = 0; k4 < M; k4++) indices.push(ci, s3 * M + k4, s3 * M + (k4 + 1) % M);
+    });
+
+    var maxW = 0, maxWAt = 0, maxT = 0, maxTAt = 0, minB = Infinity;
+    profile.forEach(function (p) {
+      if (p.W > maxW) { maxW = p.W; maxWAt = p.x; }
+      if (p.T > maxT) { maxT = p.T; maxTAt = p.x; }
+      if (p.B < minB) minB = p.B;
+    });
+
+    var doc = base.doc;
+    return {
+      L: L, base: base, doc: doc,
+      version: base.version, sectionCount: base.sectionCount,
+      core: core, station: station, profile: profile,
+      mesh: { positions: positions, indices: indices },
+      yMin: yMin, yMax: yMax,
+      volume: volume / 1000,
+      maxWidth: maxW * 2, maxWidthAt: maxWAt,
+      maxThick: maxT, maxThickAt: maxTAt,
+      minBottom: minB,
+      // 画面に出す点（制御点）の位置
+      points: {
+        outline: doc.outline.map(function (k) { return [k.x, k.y]; }),
+        bottom: doc.bottom.map(function (k) { return [k.x, k.y]; }),
+        deck: doc.deck.map(function (k) { return [k.x, k.y]; }),
+        sections: doc.sections.filter(function (s) { return s.knots.length > 1; }).map(function (s) { return s.pos; })
+      }
+    };
+  }
+
+  /* ---------- 保存（doc の曲線をそのまま書き出す） ---------- */
+
+  function docToText(doc, board) {
+    var p = doc.p, lines = [];
+    var override = {
+      p01: num(board.L), p02: num(arcLength(doc.bottom)), p03: num(board.maxThick), p04: num(board.maxWidth)
+    };
+    var secBlock = 'p35 : (\n' + doc.sections.map(function (s) {
+      return '(p36 ' + num(s.pos) + '\n' + s.knots.map(cpLine).join('\n') + '\n)';
+    }).join('\n') + '\n)';
+    var done = {};
+    p.order.forEach(function (key) {
+      done[key] = true;
+      if (key === 'p32') lines.push(curveBlock('p32', doc.outline));
+      else if (key === 'p33') lines.push(curveBlock('p33', doc.bottom));
+      else if (key === 'p34') lines.push(curveBlock('p34', doc.deck));
+      else if (key === 'p35') lines.push(secBlock);
+      else if (p.raw[key] != null) lines.push(key + ' : ' + p.raw[key]);
+      else lines.push(key + ' : ' + (override[key] != null ? override[key] : p.scalars[key]));
+    });
+    if (!done.p35 && doc.sections.length) lines.push(secBlock);
+    return lines.join('\n') + '\n';
+  }
+
+  /* ---------- 編集（点を動かす / 点を足す） ---------- */
+
+  var NEAR = 2;       // この距離(cm)以内に点があれば、その点を動かす。なければ点を足す
+  var NEAR_SEC = 4;   // 断面はこの距離(cm)以内にあれば、その断面を直す
+
+  function nearIndex(ks, x, tol) {
+    var best = -1, bd = Infinity;
+    for (var i = 0; i < ks.length; i++) {
+      var d = Math.abs(ks[i].x - x);
+      if (d < tol && d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+
+  // x の位置の点を返す（なければ曲線を分けて点を足す。形は変わらない）
+  function knotAt(ks, x) {
+    var i = nearIndex(ks, x, NEAR);
+    if (i >= 0) return { ks: ks, i: i };
+    var nk = splitAtX(ks, x);
+    return { ks: nk, i: nearIndex(nk, x, Infinity) };
+  }
+
+  // 点を上下に動かす（ハンドルも一緒に動く）
+  function moveY(k, y) {
+    var dy = y - k.y;
+    k.y += dy; k.t1[1] += dy; k.t2[1] += dy;
+    return dy;
+  }
+
+  function scaleKnots(ks, fx, fy) {
+    ks.forEach(function (k) {
+      k.x *= fx; k.t1[0] *= fx; k.t2[0] *= fx;
+      k.y *= fy; k.t1[1] *= fy; k.t2[1] *= fy;
+    });
+  }
+
+  var ops = {
+    // 全体の長さ
+    length: function (doc, base, board, L) {
+      var d = cloneDoc(doc), f = L / base.L0;
+      [d.outline, d.bottom, d.deck].forEach(function (ks) { scaleKnots(ks, f, 1); });
+      d.sections.forEach(function (s) { s.pos *= f; });
+      return d;
+    },
+    // 全体の幅（最大幅をこの値に）
+    width: function (doc, base, board, W) {
+      var d = cloneDoc(doc), f = W / board.maxWidth;
+      scaleKnots(d.outline, 1, f);
+      d.sections.forEach(function (s) { scaleKnots(s.knots, f, 1); });
+      return d;
+    },
+    // 全体の厚さ（最大の厚さをこの値に。ロッカーは変えない）
+    thick: function (doc, base, board, T) {
+      var d = cloneDoc(doc), f = T / board.maxThick;
+      var L = base.L0;
+      var Bx = function (x) { return valueAt(base.bPoly, Math.min(L, Math.max(0, x)), 'min'); };
+      var Dx = function (x) { return valueAt(base.dPoly, Math.min(L, Math.max(0, x)), 'max'); };
+      d.deck = tuneKnots(mapKnots(d.deck, function (x, y) { var b = Bx(x); return [x, b + (y - b) * f]; }, 0.3),
+        function (X) { var b = Bx(X); return b + (Dx(X) - b) * f; });
+      d.sections.forEach(function (s) { scaleKnots(s.knots, 1, f); });
+      return d;
+    },
+    // u の位置の幅（全幅）
+    'w@': function (doc, base, board, W, u) {
+      var tg = buildOutline(base, [{ u: u, v: W / 2 }]);
+      if (!tg.ok) return null;
+      var d = cloneDoc(doc), L = base.L0;
+      d.outline = fitToTarget(d.outline, u * L, L, function (x, y) {
+        var w0 = base.at(x / L).W;
+        return [x, w0 > 0.01 ? y * tg.W(x / L) / w0 : y];
+      }, function (X) { return tg.W(X / L); }, 0.05);
+      return d;
+    },
+    // u の位置のロッカー。デッキも同じだけ動かして厚さを保つ（リンク）
+    'r@': function (doc, base, board, B, u) {
+      var tg = buildRocker(base, [{ u: u, v: B }]);
+      if (!tg.ok) return null;
+      var d = cloneDoc(doc), L = base.L0;
+      var dB = function (x) { return tg.B(x / L) - base.at(x / L).B; };
+      d.bottom = fitToTarget(d.bottom, u * L, L, function (x, y) { return [x, y + dB(x)]; },
+        function (X) { return tg.B(X / L); }, 0.05);
+      d.deck = fitToTarget(linkDeck(d.deck, d.bottom), u * L, L, function (x, y) { return [x, y + dB(x)]; },
+        function (X) { var c = base.at(X / L); return tg.B(X / L) + c.T; }, 0.3);
+      return d;
+    },
+    // u の位置の厚さ（デッキだけを動かす）。
+    // デッキのカーブそのものを、曲がる向きを変えずに（ロッカーと同じ方法で）この点を通るよう作り直す
+    't@': function (doc, base, board, T, u) {
+      var L = base.L0;
+      var deckBase = { at: function (uu) { var c = base.at(uu); return { B: c.B + c.T }; } };
+      var tg = buildRocker(deckBase, [{ u: u, v: base.at(u).B + T }]);
+      var d = cloneDoc(doc);
+      if (!tg.ok) {
+        // デッキの曲がり方を保ったままでは通せないときは、厚さの変化をなめらかに作る方法に切り替える
+        var th = buildThick(base, [{ u: u, v: T }]);
+        if (!th.ok) return null;
+        d.deck = fitToTarget(d.deck, u * L, L, function (x, y) { var c = base.at(x / L); return [x, y + (th.W(x / L) - c.T)]; },
+          function (X) { var c = base.at(X / L); return c.B + th.W(X / L); }, 0.3);
+        return d;
+      }
+      var dD = function (x) { var c = base.at(x / L); return tg.B(x / L) - (c.B + c.T); };
+      d.deck = fitToTarget(d.deck, u * L, L, function (x, y) { return [x, y + dD(x)]; },
+        function (X) { return tg.B(X / L); }, 0.3);
+      return d;
+    },
+    // u の位置の断面（コンケーブ・レール）: その位置の断面を直す。なければ断面を足す
+    's@': function (doc, base, board, params, u) {
+      var p = params || {};
+      var changed = !!p.cc || ['b', 'c', 'g'].some(function (k) { return Math.abs(p[k] || 0) > 1e-4; });
+      if (!changed) return doc;
+      var d = cloneDoc(doc), x = u * base.L0, at = base.at(u);
+      if (at.W < 0.05 || at.T < 0.05) return doc;
+      var idx = -1, bd = NEAR_SEC;
+      d.sections.forEach(function (s, i) {
+        if (s.knots.length > 1 && Math.abs(s.pos - x) < bd) { bd = Math.abs(s.pos - x); idx = i; }
+      });
+      if (idx < 0) {
+        // 今の形（前後の断面をつないだ形）の断面を、元の断面と同じ 5 点で、この位置に足す
+        var sh = base.shapeAt(at.x0);
+        var half0 = sh.map(function (q) { return [q[0] * at.W, q[1] * at.T]; });
+        d.sections.push({ pos: x, knots: sectionKnots(half0) });
+        d.sections.sort(function (a, b) { return a.pos - b.pos; });
+        idx = nearSection(d.sections, x);
+      }
+      var sec = d.sections[idx];
+      var nk = editSectionKnots(sec.knots, p, at.T);
+      if (!nk) return doc;
+      sec.knots = nk;
+      return d;
+    }
+  };
+
+  /*
+   * 曲線 ks を、なめらかな目標の形 targetY に合わせる。
+   * 点は「今ある点 + 位置 x の点（なければ足す）」だけ。点は目標の形の上に移し、ハンドルの向きと長さを合わせる。
+   */
+  var FIT_TOL = 0.05;   // 直した範囲で、目標の形とのずれがこれ(cm)を超えたら点を足す
+  var FIT_MAX_ADD = 0;  // 直した位置の点のほかには点を足さない
+
+  function fitToTarget(ks, x, L, mapFn, targetY, eps) {
+    var src = knotAt(ks, x).ks;
+    for (var add = 0; ; add++) {
+      var m = mapKnots(src, mapFn, eps), worst = -1, werr = FIT_TOL, wt = 0.5;
+      for (var i = 0; i < m.length - 1; i++) {
+        if (!segChanged(src[i], src[i + 1], mapFn)) continue;   // 変えていない区間はそのまま
+        fitHandles(m[i], m[i + 1], targetY);
+        convexClamp(m[i], m[i + 1]);
+        if (Math.abs(m[i + 1].x - m[i].x) < 0.5) continue;
+        for (var j = 1; j < 20; j++) {
+          var q = bez([m[i].x, m[i].y], m[i].t2, m[i + 1].t1, [m[i + 1].x, m[i + 1].y], j / 20);
+          var e = Math.abs(q[1] - targetY(q[0]));
+          if (e > werr) { werr = e; worst = i; wt = j / 20; }
+        }
+      }
+      if (worst < 0 || add >= FIT_MAX_ADD) return m;
+      src = splitSegment(src, worst, Math.min(0.8, Math.max(0.2, wt)));
+    }
+  }
+
+  // 区間の中で形が変わるか（変換で動く量がほぼ 0 なら変わらない）
+  function segChanged(a, b, mapFn) {
+    for (var j = 0; j <= 8; j++) {
+      var x = a.x + (b.x - a.x) * j / 8;
+      if (Math.abs(mapFn(x, 0)[1]) > 1e-5 || Math.abs(mapFn(x, 1)[1] - 1) > 1e-5) return true;
+    }
+    return false;
+  }
+
+  /*
+   * ハンドルの長さを、両端のハンドルの延長線が交わる所より手前に収める。
+   * こうすると区間の中で曲がる向きが変わらない（くねり・へこみができない）。
+   */
+  function convexClamp(a, b) {
+    var d0 = [a.t2[0] - a.x, a.t2[1] - a.y], d3 = [b.t1[0] - b.x, b.t1[1] - b.y];
+    var l0 = Math.hypot(d0[0], d0[1]), l3 = Math.hypot(d3[0], d3[1]);
+    if (l0 < 1e-9 || l3 < 1e-9) return;
+    d0 = [d0[0] / l0, d0[1] / l0]; d3 = [d3[0] / l3, d3[1] / l3];
+    // a + s・d0 = b + t・d3 を解く
+    var det = d0[0] * -d3[1] - d0[1] * -d3[0];
+    if (Math.abs(det) < 1e-12) return;
+    var rx = b.x - a.x, ry = b.y - a.y;
+    var s = (rx * -d3[1] - ry * -d3[0]) / det, t = (d0[0] * ry - d0[1] * rx) / det;
+    if (!(s > 0 && t > 0)) return;
+    if (l0 > 0.95 * s) a.t2 = [a.x + d0[0] * 0.95 * s, a.y + d0[1] * 0.95 * s];
+    if (l3 > 0.95 * t) b.t1 = [b.x + d3[0] * 0.95 * t, b.y + d3[1] * 0.95 * t];
+  }
+
+  // デッキ = ボトム + 厚さ なので、ボトムの点と同じ位置にもデッキの点を置く（リンク。近くにあれば足さない）
+  function linkDeck(deck, bottom) {
+    var ks = deck;
+    bottom.slice(1, -1).forEach(function (k) {
+      if (nearIndex(ks, k.x, NEAR) < 0) ks = splitAtX(ks, k.x);
+    });
+    return ks;
+  }
+
+  /*
+   * 断面の点（ボトム中心・エッジ・ポイント・レール上側・デッキ中心）を、点を増やさずに動かして形を変える。
+   * BoardCAD で手で作るのと同じやり方:
+   *   シングル: エッジの点を下げる / V: エッジの点を上げ、中心のハンドルをエッジに向ける
+   *   ダブル: 中心のハンドルを上に傾ける（中心から外へ一度上がり、エッジで下がる = 左右 2 本の溝）
+   *   レールの高さ: ポイントの点を上下 / 上の形・下の形: ポイントと隣の点のハンドルの長さと位置
+   * p.d / p.e は実寸(cm)、Tact はその位置の実際の厚さ(cm)
+   */
+  function editSectionKnots(ks0, p, Tact) {
+    var ks = ks0.map(cloneKnot), n = ks.length, i;
+    if (n < 3) return null;
+    var ia = 0;
+    for (i = 1; i < n; i++) if (ks[i].x > ks[ia].x) ia = i;
+    var W = ks[ia].x;
+    if (W < 0.05) return null;
+    // 中心の点（ボトム側で x がほぼ 0 の最後の点）とエッジの点（ポイントの手前のボトム側の点）
+    var iC = 0;
+    for (i = 0; i < ia; i++) if (ks[i].x < 0.02 * W) iC = i;
+    var iE = -1;
+    for (i = iC + 1; i < ia; i++) iE = i;
+    var iU = ia + 1 < n - 1 ? ia + 1 : -1;
+    var y0 = ks[iC].y, top = ks[n - 1].y;
+    if (top - y0 < 0.05) return null;
+    var sc = (top - y0) / (Tact > 0.01 ? Tact : (top - y0));   // 実寸 cm → この断面の単位
+
+    function moveXY(k, dx, dy) {
+      k.x += dx; k.t1[0] += dx; k.t2[0] += dx;
+      k.y += dy; k.t1[1] += dy; k.t2[1] += dy;
+    }
+    function scaleHandle(k, side, f) {
+      var h = side === 1 ? k.t1 : k.t2;
+      h[0] = k.x + (h[0] - k.x) * f; h[1] = k.y + (h[1] - k.y) * f;
+    }
+    // 区間 k0→k1 の両ハンドルが、延長線の交わる角の frac 倍より長ければ縮める（向きは変えない）
+    function fitSegmentInside(k0, k1, frac) {
+      var d0 = [k0.t2[0] - k0.x, k0.t2[1] - k0.y], d1 = [k1.t1[0] - k1.x, k1.t1[1] - k1.y];
+      var l0 = Math.hypot(d0[0], d0[1]), l1 = Math.hypot(d1[0], d1[1]);
+      if (l0 < 1e-9 || l1 < 1e-9) return;
+      d0 = [d0[0] / l0, d0[1] / l0]; d1 = [d1[0] / l1, d1[1] / l1];
+      var det = d0[0] * -d1[1] - d0[1] * -d1[0];
+      if (Math.abs(det) < 1e-12) return;
+      var rx = k1.x - k0.x, ry = k1.y - k0.y;
+      var ss = (rx * -d1[1] - ry * -d1[0]) / det, tt = (d0[0] * ry - d0[1] * rx) / det;
+      if (!(ss > 0 && tt > 0)) return;
+      if (l0 > frac * ss) { l0 = frac * ss; k0.t2 = [k0.x + d0[0] * l0, k0.y + d0[1] * l0]; }
+      if (l1 > frac * tt) { l1 = frac * tt; k1.t1 = [k1.x + d1[0] * l1, k1.y + d1[1] * l1]; }
+    }
+
+    // --- コンケーブ ---
+    // p.cc: 'single' | 'vee' | 'double'、p.dep: 深さ(実寸 cm)
+    // シングル / V: アンダーエッジの高さ（中心の点から測る）= −深さ / +深さ（BoardCAD の青い点の Y）
+    // ダブル: アンダーエッジは動かさず、その内側のハンドル（BoardCAD の黄色い点）を上げてくぼませる。
+    //         中心のハンドル（赤い点）は水平に少しだけ伸ばす。深さ = 中心の点とアンダーエッジを結ぶ線からのくぼみ
+    var cc = p.cc, dep = Math.max(0, p.dep || 0) * sc;
+    if (cc && iE > iC) {
+      var C = ks[iC], E = ks[iE], xE = E.x - C.x;
+      if (xE < 0.05) return null;
+      var t2len = Math.hypot(E.t2[0] - E.x, E.t2[1] - E.y) || xE * 0.04;
+      // アンダーエッジの内側のハンドルを (dx, dy) に置き、外側のハンドルは同じ向きの一直線にする（折れ目を作らない）
+      var setInner = function (dx, dy) {
+        var l = Math.hypot(dx, dy) || 1;
+        E.t1 = [E.x + dx, E.y + dy];
+        E.t2 = [E.x - dx / l * t2len, E.y - dy / l * t2len];
+      };
+      if (cc === 'single' || cc === 'vee') {
+        var dyE = C.y + (cc === 'single' ? -dep : dep) - E.y;
+        for (i = iC + 1; i < iE; i++) moveXY(ks[i], 0, dyE * Math.min(1, (ks[i].x - C.x) / xE));
+        moveXY(E, 0, dyE);
+      }
+      if (cc === 'single') {
+        // 中心は水平、アンダーエッジの内側のハンドルは中心へ向けて少し上がる（BoardCAD で 2mm のとき 73mm 先で +1.5mm）
+        C.t2 = [C.x + xE / 3, C.y];
+        setInner(-xE / 3, 0.75 * dep);
+      } else if (cc === 'vee') {
+        // アンダーエッジを上げるとレールの下側が低くなるので、アンダーエッジをレール側（外側）へ寄せる:
+        // ポイントからアンダーエッジを見た角度を元のままにし、レール側のハンドルも同じ割合で短くする
+        var E0 = ks0[iE], Ap = ks[ia];
+        var dx0 = Ap.x - E0.x, dy0 = Ap.y - E0.y, dyN = Ap.y - E.y;
+        if (dx0 > 1e-6 && dy0 > 1e-6 && dyN < dy0) {
+          var ratio = Math.max(0.2, dyN / dy0);
+          moveXY(E, Ap.x - dx0 * ratio - E.x, 0);
+          t2len *= ratio;
+          scaleHandle(Ap, 1, ratio);
+        }
+        // 中心とアンダーエッジのハンドルを互いに向け合う（中心が折れ目、ボトムは平らな面）
+        var vx = E.x - C.x, vy = E.y - C.y;
+        C.t2 = [C.x + vx / 3, C.y + vy / 3];
+        setInner(-vx / 3, -vy / 3);
+        // レール側（アンダーエッジ → ポイント）: ハンドルが延長線の交わる角を越えるとふくらむので、手前で止める
+        fitSegmentInside(E, Ap, 0.9);
+      } else if (cc === 'double') {
+        C.t2 = [C.x + xE * 0.1, C.y];
+        var hx = xE * 0.52;
+        var rise = function (h) {
+          var mx = -Infinity;
+          for (var j = 1; j < 60; j++) {
+            var q = bez([C.x, C.y], C.t2, [E.x - hx, E.y + h], [E.x, E.y], j / 60);
+            var chord = C.y + (E.y - C.y) * (q[0] - C.x) / xE;
+            mx = Math.max(mx, q[1] - chord);
+          }
+          return mx;
+        };
+        var span = Math.abs(E.y - C.y) * 4 + dep * 12 + 0.1;
+        var lo = -span, hi = span;
+        for (var it = 0; it < 50; it++) { var mid = (lo + hi) / 2; if (rise(mid) < dep) lo = mid; else hi = mid; }
+        setInner(-hx, (lo + hi) / 2);
+      }
+    }
+
+    // --- レール ---
+    var A = ks[ia];
+    if (Math.abs(p.b || 0) > 1e-6) {
+      // ポイントの高さ（厚さに対する割合）を動かす
+      var f0 = (A.y - y0) / (top - y0);
+      var f = Math.min(0.85, Math.max(0.08, f0 + p.b * RAIL_B));
+      moveXY(A, 0, (f - f0) * (top - y0));
+    }
+    // 区間 k0→k1 のハンドルの長さを変える（点は動かさない）。
+    // amt > 0: 両端のハンドルの延長線が交わる角へ近づける（角張る） / amt < 0: 短くする（丸くなる）
+    // 角より先へは伸ばさないので、区間の中で曲がる向きは変わらない（へこみ・出っ張りができない）
+    function shapeSegment(k0, k1, amt) {
+      var d0 = [k0.t2[0] - k0.x, k0.t2[1] - k0.y], d1 = [k1.t1[0] - k1.x, k1.t1[1] - k1.y];
+      var l0 = Math.hypot(d0[0], d0[1]), l1 = Math.hypot(d1[0], d1[1]);
+      if (l0 < 1e-9 || l1 < 1e-9) return;
+      d0 = [d0[0] / l0, d0[1] / l0]; d1 = [d1[0] / l1, d1[1] / l1];
+      var det = d0[0] * -d1[1] - d0[1] * -d1[0];
+      var rx = k1.x - k0.x, ry = k1.y - k0.y;
+      var s0 = Infinity, s1 = Infinity;
+      if (Math.abs(det) > 1e-12) {
+        var ss = (rx * -d1[1] - ry * -d1[0]) / det, tt = (d0[0] * ry - d0[1] * rx) / det;
+        if (ss > 0 && tt > 0) { s0 = 0.95 * ss; s1 = 0.95 * tt; }
+      }
+      var n0, n1;
+      if (amt > 0) {
+        if (!isFinite(s0)) return;
+        n0 = l0 + amt * 0.6 * Math.max(0, s0 - l0); n1 = l1 + amt * 0.6 * Math.max(0, s1 - l1);
+      } else {
+        n0 = l0 * (1 + amt * 0.45); n1 = l1 * (1 + amt * 0.45);
+      }
+      k0.t2 = [k0.x + d0[0] * n0, k0.y + d0[1] * n0];
+      k1.t1 = [k1.x + d1[0] * n1, k1.y + d1[1] * n1];
+    }
+    // ポイントから上（ポイント → レール上側の点）: ふっくら(+) / 絞る(-)
+    if (Math.abs(p.c || 0) > 1e-6 && iU >= 0) shapeSegment(ks[ia], ks[iU], Math.max(-1, Math.min(1, p.c)));
+    // ポイントから下（エッジの点 → ポイント）: エッジ(+) / 丸い(-)
+    if (Math.abs(p.g || 0) > 1e-6 && iE >= 0) shapeSegment(ks[iE], ks[ia], Math.max(-1, Math.min(1, p.g)));
+    // ポイントより外に点が出ないようにする
+    for (i = 0; i < n; i++) if (i !== ia && ks[i].x > W) moveXY(ks[i], W - ks[i].x, 0);
+    return ks;
+  }
+
+  // 断面の点の役割: iC 中心, iE アンダーエッジ（レールの一番下の点）, ia ポイント（レールの一番外）
+  function sectionRoles(ks) {
+    var n = ks.length, ia = 0, i;
+    for (i = 1; i < n; i++) if (ks[i].x > ks[ia].x) ia = i;
+    var W = ks[ia].x, iC = 0;
+    for (i = 0; i < ia; i++) if (ks[i].x < 0.02 * W) iC = i;
+    var iE = ia - 1 > iC ? ia - 1 : -1;
+    return { iC: iC, iE: iE, ia: ia };
+  }
+
+  /*
+   * 位置 u の断面のアンダーエッジとポイントの位置を、図面の座標（半幅 cm, 高さ cm）で返す。
+   * その位置に断面がなければ、編集したときに足される断面（今の形の 5 点）で求める。
+   */
+  function sectionMarks(board, u) {
+    var base = board.base, L = base.L0, x = u * L, at = base.at(u);
+    if (at.W < 0.05 || at.T < 0.05) return null;
+    var ks = null, bd = NEAR_SEC;
+    board.doc.sections.forEach(function (s) { if (s.knots.length > 1 && Math.abs(s.pos - x) < bd) { bd = Math.abs(s.pos - x); ks = s.knots; } });
+    if (!ks) {
+      var sh = base.shapeAt(at.x0);
+      ks = sectionKnots(sh.map(function (q) { return [q[0] * at.W, q[1] * at.T]; }));
+    }
+    var poly = sampleCurve(ks, 80);
+    var w = Math.max.apply(null, poly.map(function (q) { return q[0]; })), top = poly[poly.length - 1][1];
+    if (w < 0.05 || top < 0.05) return null;
+    var r = sectionRoles(ks);
+    var map = function (k) { return [k.x / w * at.W, at.B + k.y / top * at.T]; };
+    return { underEdge: r.iE >= 0 ? map(ks[r.iE]) : null, apex: map(ks[r.ia]), center: map(ks[r.iC]) };
+  }
+
+  /*
+   * 位置 u の断面のコンケーブを読む。{ type: 'single'|'vee'|'double', depth: 実寸 cm }
+   * ボトムが中心の点より上へ持ち上がっていればダブル、アンダーエッジが中心より下ならシングル、上なら V
+   */
+  function sectionConcave(board, u) {
+    var base = board.base, x = u * base.L0, at = base.at(u);
+    if (at.W < 0.05 || at.T < 0.05) return null;
+    var ks = null, bd = NEAR_SEC;
+    board.doc.sections.forEach(function (s) { if (s.knots.length > 1 && Math.abs(s.pos - x) < bd) { bd = Math.abs(s.pos - x); ks = s.knots; } });
+    if (!ks) {
+      var sh = base.shapeAt(at.x0);
+      ks = sectionKnots(sh.map(function (q) { return [q[0] * at.W, q[1] * at.T]; }));
+    }
+    var r = sectionRoles(ks);
+    if (r.iE < 0) return null;
+    var C = ks[r.iC], E = ks[r.iE], top = ks[ks.length - 1].y;
+    if (top - C.y < 0.05) return null;
+    var sc = (top - C.y) / at.T, xE = E.x - C.x;
+    var bottom = sampleCurve(ks.slice(r.iC, r.iE + 1), 60);
+    var up = 0, dip = 0;
+    bottom.forEach(function (q) {
+      up = Math.max(up, q[1] - C.y);
+      dip = Math.max(dip, q[1] - (C.y + (E.y - C.y) * (q[0] - C.x) / (xE || 1)));
+    });
+    // 中心とアンダーエッジの間で、どちらの点よりも高く持ち上がっていればダブル
+    if ((up - Math.max(0, E.y - C.y)) / sc > 0.03) return { type: 'double', depth: dip / sc };
+    var dy = (E.y - C.y) / sc;
+    return dy <= 0 ? { type: 'single', depth: -dy } : { type: 'vee', depth: dy };
+  }
+
+  function nearSection(sections, x) {
+    var best = -1, bd = Infinity;
+    sections.forEach(function (s, i) { if (s.knots.length > 1 && Math.abs(s.pos - x) < bd) { bd = Math.abs(s.pos - x); best = i; } });
+    return best;
+  }
+
+  function edit(doc, base, board, kind, value, u) {
+    return ops[kind](doc, base, board, value, u);
+  }
+
+  /* ---------- 表示用の単位変換 ---------- */
+
+  function gcd(a, b) { return b ? gcd(b, a % b) : a; }
+
+  function inch(cm, den) {
+    den = den || 8;
+    var neg = cm < 0;
+    var v = Math.abs(cm) / 2.54, whole = Math.floor(v), n = Math.round((v - whole) * den);
+    if (n === den) { whole++; n = 0; }
+    var s;
+    if (!n) s = whole + '"';
+    else {
+      var gg = gcd(n, den);
+      s = (whole ? whole + ' ' : '') + (n / gg) + '/' + (den / gg) + '"';
+    }
+    return (neg && (whole || n) ? '-' : '') + s;
+  }
+
+  function ftIn(cm) {
+    var v = cm / 2.54, ft = Math.floor(v / 12), rest = v - ft * 12;
+    var s = inch(rest * 2.54, 4);
+    if (s === '12"') { ft++; s = '0"'; }
+    return ft + "'" + s;
+  }
+
+  g.BRD = {
+    parseBrd: parseBrd, sampleCurve: sampleCurve,
+    docFromText: docFromText, docToText: docToText, cloneDoc: cloneDoc, docKey: docKey,
+    baseFromDoc: baseFromDoc, shape: shape, edit: edit, NEAR: NEAR, sectionMarks: sectionMarks, sectionConcave: sectionConcave,
+    inch: inch, ftIn: ftIn
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+window.BRD_SAMPLES = {"ショートボード":"p01 : 177.8\np02 : 179.23350804\np03 : 5.689908119\np04 : 47.749830965\np07 : V4.4\np55 : 0\np56 : 0\np57 : 0\np43 : c:\\machine\np11 : 0\np12 : 0\np13 : 0\np14 : 0.0\np15 : -0.02727784393629975\np16 : -0.003908027413518547\np17 : 0.0\np18 : 0.0\np99 : 0.0\np19 : 0.0\np20 : 0.0\np21 : 0.0\np22 : 0.0\np23 : 0.0\np24 : 0\np25 : 0\np42 : 0\np26 : 0\np44 : 90.0\np46 : 0\np47 : 0\np38 : 2\np53 : 0\np41 : false\np50 : [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]\np27 : [170.0,0.0,25.0]\np28 : [260.4,0.0,26.0]\np29 : [0.0,0.0,0.0]\np30 : [120.0,0.0,40.0]\np31 : [120.03254311912706,0.0,29.51566627551277]\np32 : (\n(cp [0.0,0.0,0.0,0.0,0.001284284,4.492321611] false false)\n(cp [1.320447018,6.235797217,0.017582151,4.887291089,6.909671433,12.020820338] true false)\n(cp [80.751168,23.875,32.556597281,23.870693327,122.179356518,23.878702028] true false)\n(cp [177.8,0.34056547,160.88675248,16.029726784,177.8,0.34056547] false false)\n(cp [177.8,0.046419128,177.8,0.046419128,177.8,0.046419128] false false)\n)\np33 : (\n(cp [0.0,6.195444107,-1.947037,6.472251492,25.619317631,2.683104216] false false)\n(cp [88.903852038,0.0,67.706263602,0.0,152.503666165,0.0] true false)\n(cp [177.8,10.547510753,171.178803281,7.284998755,197.676007,23.335700161] false false)\n)\np34 : (\n(cp [0.0,6.195233418,-1.947037,6.429274888,0.0,6.195233418] false false)\n(cp [0.0,7.478539818,0.0,7.478539818,20.581441578,6.785255092] false false)\n(cp [88.902781824,5.690001433,56.371702012,5.690007595,151.34146727,5.689989606] true false)\n(cp [177.8,11.138419187,167.801963689,7.810426056,177.8,11.138419187] false false)\n(cp [177.8,10.547152062,177.8,10.547152062,197.676007,23.180794893] false false)\n)\np35 : (\n(p36 0.0\n(cp [0.0,0.0,0.0,0.0,0.0,0.0] false false)\n)\n(p36 0.928529412\n(cp [0.0,0.0,-2.149091552,0.0,3.407842094,0.0] true false)\n(cp [5.627188606,0.058024491,5.583586873,0.056926778,5.739217712,0.060844926] true false)\n(cp [5.810595012,0.460107272,5.811537492,0.225330921,5.809335385,0.773886714] true false)\n(cp [5.592976926,1.082114961,5.788217689,1.039529857,4.632111861,1.291694855] true false)\n(cp [0.0,1.377853383,2.475705503,1.377853383,-2.395069338,1.377853383] true false)\n)\n(p36 31.376470588\n(cp [0.0,0.0,-6.966767157,0.0,11.047292218,0.0] true false)\n(cp [18.185268796,-0.333654535,14.759880507,-0.200354453,18.632759934,-0.351068796] true false)\n(cp [18.836360163,0.689977746,18.839528133,0.06883012,18.832276795,1.490608518] true false)\n(cp [16.697560076,2.293150806,18.632355361,1.962753072,13.59420247,2.823099544] true false)\n(cp [0.0,3.645389349,8.025560275,3.645389349,-7.76415988,3.645389349] true false)\n)\n(p36 91.514705882\n(cp [0.0,0.0,-8.764444246,0.0,9.766164771,0.0] true false)\n(cp [21.799641897,-0.279729303,19.910215405,-0.243242514,22.455421303,-0.292393085] true false)\n(cp [23.696820167,1.187766306,23.699326866,0.218967493,23.694361703,2.137922945] true false)\n(cp [20.253016359,3.829500864,22.68705858,3.314052247,16.348880608,4.656266053] true false)\n(cp [0.0,5.687118006,10.577926196,5.687118006,-9.76759304,5.687118006] true false)\n)\n(p36 146.608823529\n(cp [0.0,0.0,-5.877207535,0.0,6.548935171,0.0] true false)\n(cp [14.679813673,-0.009406524,13.412813586,-0.080241175,15.118972108,0.015145672] true false)\n(cp [15.890469049,1.010878361,15.884788526,0.348244792,15.897597041,1.842359223] true false)\n(cp [13.606800764,2.827590801,15.239005942,2.475000094,10.988789239,3.393136449] true false)\n(cp [0.0,3.890251889,4.277657999,3.890251889,-6.549892931,3.890251889] true false)\n)\n(p36 176.461764706\n(cp [0.0,0.0,-0.564891792,0.0,0.629455349,0.0] true false)\n(cp [1.410960256,-0.001929905,1.289181683,-0.001646924,1.453376224,-0.002028469] true false)\n(cp [1.527323219,0.230984878,1.526988252,0.095033146,1.528008331,0.50904862] true false)\n(cp [1.368770537,0.665375183,1.507792589,0.610806129,1.112518264,0.765959544] true false)\n(cp [0.0,0.798150125,0.411150002,0.798150125,-0.629547405,0.798150125] true false)\n)\n(p36 177.8\n(cp [0.0,0.0,0.0,0.0,0.0,0.0] false false)\n)\n)\n"};
+
+</script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var $$ = function (s) { return Array.prototype.slice.call(document.querySelectorAll(s)); };
+  var PEN = '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></svg>';
+
+  // doc = ファイルの中身（曲線と点）。表示も保存もこの doc から作る（見たままが保存される）
+  var doc = null, base = null, board = null;
+  var docOrig = null, original = null, boardName = 'ショートボード';
+  var history = [];
+  var tab = '3d', view = 'persp', posU = 0.5;
+  var SNAP = 1.5;   // スライダーがこの距離(cm)以内に来たら点に吸い付く
+  var unit = 'in';
+  try { if (localStorage.getItem('bshape-unit') === 'cm') unit = 'cm'; } catch (e) {}
+
+  function tok(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  function setDoc(d) {
+    doc = d;
+    base = BRD.baseFromDoc(d);
+    board = BRD.shape(base);
+  }
+
+  /* ---------- 項目ごとの設定（値はすべて cm） ---------- */
+  var KINDS = {
+    length: { title: '長さ', sub: 'ボード全体を長さ方向に伸び縮みさせます。点は増えません。', den: 4, stepIn: 0.5, stepCm: 0.5, min: 90, max: 400 },
+    width:  { title: '幅', sub: '最大幅がこの値になるよう、全体の幅を比例して変えます。点は増えません。', den: 8, stepIn: 0.125, stepCm: 0.2, min: 25, max: 80 },
+    thick:  { title: '厚さ', sub: '最大の厚さがこの値になるよう、全体の厚みを比例して変えます。ロッカーは変わりません。点は増えません。', den: 16, stepIn: 0.0625, stepCm: 0.1, min: 2.5, max: 15 },
+    'w@':   { title: 'この位置の幅', den: 8, stepIn: 0.125, stepCm: 0.2, min: 0.5, max: 80,
+              how: 'アウトラインの点を動かします。テールとノーズの端までなだらかにつながるよう、ほかの点の向きも自動で整えます。' },
+    't@':   { title: 'この位置の厚さ', den: 16, stepIn: 0.0625, stepCm: 0.1, min: 0.3, max: 15,
+              how: 'デッキの点を動かします。テールとノーズの端までなだらかにつながるよう、ほかの点の向きも自動で整えます。' },
+    'r@':   { title: 'この位置のロッカー', den: 16, stepIn: 0.0625, stepCm: 0.1, min: -5, max: 40,
+              how: 'ボトムの点を動かします。厚さが変わらないよう、同じ位置のデッキの点も一緒に動きます。ボトムの一番低い所は動きません。' }
+  };
+
+  function valueOf(b, kind, u) {
+    if (kind === 'length') return b.L;
+    if (kind === 'width') return b.maxWidth;
+    if (kind === 'thick') return b.maxThick;
+    var c = b.core(u);
+    return kind === 'w@' ? c.W * 2 : kind === 't@' ? c.T : c.B;
+  }
+
+  function fmt(kind, v, un) {
+    un = un || unit;
+    if (un === 'cm') return v.toFixed(kind === 'length' ? 1 : kind === 'thick' || kind === 't@' || kind === 'r@' ? 2 : 1) + ' cm';
+    if (kind === 'length') return BRD.ftIn(v);
+    return BRD.inch(v, KINDS[kind].den);
+  }
+  function fmtPos(cm) { return unit === 'cm' ? cm.toFixed(1) + ' cm' : BRD.inch(cm, 4); }
+
+  /* ---------- 点（制御点）と吸い付き ---------- */
+  // 今のタブで直せる点の位置（テールからの距離 cm）
+  function pointXs(t) {
+    if (!board) return [];
+    var P = board.points, L = board.L, inside = function (x) { return x > 0.5 && x < L - 0.5; };
+    if (t === 'outline') return P.outline.map(function (p) { return p[0]; }).filter(inside);
+    if (t === 'rocker') return P.bottom.map(function (p) { return p[0]; }).concat(P.deck.map(function (p) { return p[0]; }));
+    if (t === 'section') return P.sections.filter(inside);
+    return [];
+  }
+  // 位置 u の近くにある点の位置（なければ null）
+  function pointNear(u, t, tol) {
+    var x = u * board.L, best = null, bd = tol;
+    pointXs(t).forEach(function (px) { var d = Math.abs(px - x); if (d <= bd) { bd = d; best = px; } });
+    return best;
+  }
+  function onPoint() { return board && pointNear(posU, tab, 0.05) !== null; }
+
+  /* ---------- 3D（ボードの長さ方向を画面の縦、ノーズを上にする） ---------- */
+  var three = null;
+  function init3D() {
+    if (!window.THREE || !THREE.OrbitControls) throw new Error('3D ライブラリを読み込めませんでした');
+    var canvas = $('#c3d');
+    var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(35, 1, 1, 6000);
+    var controls = new THREE.OrbitControls(camera, canvas);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.12;
+    controls.rotateSpeed = 0.8;
+    controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x7d8f99, 0.85));
+    var key = new THREE.DirectionalLight(0xffffff, 0.75); key.position.set(150, 180, 260); scene.add(key);
+    var fill = new THREE.DirectionalLight(0xffffff, 0.3); fill.position.set(-160, -100, -220); scene.add(fill);
+    // ボード座標 (長さ x, 高さ y, 幅 z) → 画面 (幅 X, 長さ Y, 高さ Z)
+    var group = new THREE.Group();
+    group.matrixAutoUpdate = false;
+    group.matrix.set(0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1);
+    scene.add(group);
+    three = { renderer: renderer, scene: scene, camera: camera, controls: controls, group: group };
+    function loop() {
+      if (tab === '3d') { controls.update(); renderer.render(scene, camera); }
+      requestAnimationFrame(loop);
+    }
+    loop();
+    new ResizeObserver(function () { resize3D(); draw2D(); }).observe($('#stage'));
+  }
+
+  function resize3D() {
+    if (!three) return;
+    var r = $('#stage').getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    three.renderer.setSize(r.width, r.height, false);
+    three.camera.aspect = r.width / r.height;
+    three.camera.updateProjectionMatrix();
+  }
+
+  function buildMesh() {
+    if (!three || !board) return;
+    var g = three.group;
+    while (g.children.length) {
+      var c = g.children.pop();
+      if (c.geometry) c.geometry.dispose();
+      if (c.material) c.material.dispose();
+    }
+    var L = board.L, yc = (board.yMin + board.yMax) / 2;
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(board.mesh.positions.slice(), 3));
+    geo.setIndex(board.mesh.indices);
+    geo.translate(-L / 2, -yc, 0);
+    geo.computeVertexNormals();
+    g.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xf3f0e6, roughness: 0.42, metalness: 0, side: THREE.DoubleSide })));
+    var stringerColor = new THREE.Color(tok('--stringer') || '#9a6a37');
+    [['D', 0.06], ['B', -0.06]].forEach(function (spec) {
+      var pts = board.profile.map(function (p) { return new THREE.Vector3(p.x - L / 2, p[spec[0]] - yc + spec[1], 0); });
+      g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: stringerColor })));
+    });
+  }
+
+  function setView(v) {
+    view = v;
+    $$('#views button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.view === v)); });
+    if (!three || !board) return;
+    var cam = three.camera, L = board.L;
+    var half = Math.tan(cam.fov * Math.PI / 360);
+    var dist = Math.max(L * 0.62 / half, board.maxWidth * 0.75 / (half * cam.aspect));
+    var dir = { deck: [0, 0, 1], bottom: [0, 0, -1], side: [1, 0, 0.0001], persp: [0.55, -0.45, 0.85] }[v];
+    var n = Math.hypot(dir[0], dir[1], dir[2]);
+    cam.up.set(0, 1, 0);
+    cam.position.set(dir[0] / n * dist, dir[1] / n * dist, dir[2] / n * dist);
+    three.controls.target.set(0, 0, 0);
+    cam.lookAt(0, 0, 0);
+    three.controls.update();
+  }
+
+  /* ---------- 2D 図面（ノーズが上） ---------- */
+  var geo2 = null; // 画面の縦位置 → ボードの位置 の換算
+
+  function setupCanvas(cv) {
+    var r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+    var ctx = cv.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, r.width, r.height);
+    ctx.lineJoin = 'round';
+    return { ctx: ctx, w: r.width, h: r.height };
+  }
+
+  function label(ctx, text, x, y, align, color, size, weight) {
+    ctx.fillStyle = color || tok('--muted');
+    ctx.font = (weight || 400) + ' ' + (size || 12) + 'px ' + tok('--font-body');
+    ctx.textAlign = align || 'left';
+    ctx.fillText(text, x, y);
+  }
+
+  // 点（制御点）。active はスライダーが合っている点
+  function dot(ctx, x, y, active) {
+    ctx.beginPath(); ctx.arc(x, y, active ? 6 : 4, 0, 7);
+    ctx.fillStyle = active ? tok('--accent') : tok('--stringer'); ctx.fill();
+    ctx.strokeStyle = tok('--surface'); ctx.lineWidth = 1.5; ctx.stroke();
+  }
+
+  // 縦向きのアウトライン（1 本の閉じた図形として描く）
+  function drawOutline(ctx, cx, base0, s) {
+    var P = board.profile, Y = function (x) { return base0 - x * s; };
+    ctx.beginPath();
+    P.forEach(function (p, i) { if (i) ctx.lineTo(cx + p.W * s, Y(p.x)); else ctx.moveTo(cx + p.W * s, Y(p.x)); });
+    for (var i = P.length - 1; i >= 0; i--) ctx.lineTo(cx - P[i].W * s, Y(P[i].x));
+    ctx.closePath();
+    ctx.fillStyle = tok('--accent-soft'); ctx.fill();
+    ctx.strokeStyle = tok('--fg'); ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = tok('--stringer'); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx, Y(0)); ctx.lineTo(cx, Y(board.L)); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  function marker(ctx, x1, x2, y) {
+    ctx.strokeStyle = tok('--accent'); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x1, y); ctx.lineTo(x2, y); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x2 + 6, y, 5, 0, 7); ctx.fillStyle = tok('--accent'); ctx.fill();
+  }
+
+  function draw2D() {
+    if (!board || tab === '3d') return;
+    var c = setupCanvas($('#c2d')), ctx = c.ctx, w = c.w, h = c.h;
+    var fg = tok('--fg'), muted = tok('--muted'), line = tok('--line');
+    var L = board.L, maxHalf = board.maxWidth / 2, m = 16;
+    var cur = board.core(posU), curX = posU * L;
+    var isCur = function (x) { return Math.abs(x - curX) < 0.05; };
+
+    if (tab === 'outline') {
+      var s = Math.min((h - 2 * m - 36) / L, (w - 2 * m - 40) / (2 * maxHalf));
+      var cx = w / 2, b0 = h / 2 + L * s / 2;
+      geo2 = { base: b0, s: s };
+      drawOutline(ctx, cx, b0, s);
+      marker(ctx, cx - maxHalf * s - 8, cx + maxHalf * s + 8, b0 - cur.x * s);
+      // アウトラインの点（右側に表示）
+      board.points.outline.forEach(function (p) {
+        if (p[0] < 0.5 || p[0] > L - 0.5) return;
+        dot(ctx, cx + p[1] * s, b0 - p[0] * s, isCur(p[0]));
+      });
+      label(ctx, 'ノーズ', cx, b0 - L * s - 8, 'center', muted);
+      label(ctx, 'テール', cx, b0 + 18, 'center', muted);
+    }
+
+    if (tab === 'rocker') {
+      var P = board.profile;
+      var lo = Math.min(board.minBottom, 0), hi = Math.max.apply(null, P.map(function (p) { return p.D; }));
+      var sl = (h - 2 * m - 36) / L;
+      var sh = sl; // 3D と同じ実寸の比率
+      var left = (w - (hi - lo) * sh) / 2, b2 = h / 2 + L * sl / 2;
+      var X = function (y) { return left + (y - lo) * sh; }, Y2 = function (x) { return b2 - x * sl; };
+      geo2 = { base: b2, s: sl };
+      ctx.strokeStyle = line; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(X(0), Y2(0) + 6); ctx.lineTo(X(0), Y2(L) - 6); ctx.stroke();
+      ctx.beginPath();
+      P.forEach(function (p, i) { if (i) ctx.lineTo(X(p.B), Y2(p.x)); else ctx.moveTo(X(p.B), Y2(p.x)); });
+      for (var i = P.length - 1; i >= 0; i--) ctx.lineTo(X(P[i].D), Y2(P[i].x));
+      ctx.closePath();
+      ctx.fillStyle = tok('--accent-soft'); ctx.fill();
+      ctx.strokeStyle = fg; ctx.lineWidth = 1.5; ctx.stroke();
+      marker(ctx, X(lo) - 10, X(hi) + 10, Y2(cur.x));
+      // ボトムとデッキの点
+      board.points.bottom.forEach(function (p) { dot(ctx, X(p[1]), Y2(p[0]), isCur(p[0])); });
+      board.points.deck.forEach(function (p) { dot(ctx, X(p[1]), Y2(p[0]), isCur(p[0])); });
+      label(ctx, 'ノーズ', X(0), Y2(L) - 10, 'left', muted);
+      label(ctx, 'テール', X(0), b2 + 18, 'left', muted);
+      var ly = Math.abs(Y2(cur.x) - h * 0.3) < 24 ? h * 0.7 : h * 0.3;
+      label(ctx, 'ボトム', X(lo) - 14, ly, 'right', muted, 11);
+      label(ctx, 'デッキ', X(hi) + 14, ly, 'left', muted, 11);
+      label(ctx, '実寸の比率', w - 8, h - 8, 'right', muted, 10);
+    }
+
+    if (tab === 'section') {
+      var s1 = (h - 2 * m - 24) / L;
+      var miniW = 2 * maxHalf * s1;
+      var cx1 = m + miniW / 2, b3 = h / 2 + L * s1 / 2;
+      geo2 = { base: b3, s: s1 };
+      drawOutline(ctx, cx1, b3, s1);
+      // 断面のある位置の印
+      board.points.sections.forEach(function (x) {
+        var y = b3 - x * s1, half = board.core(x / L).W * s1, on = isCur(x);
+        ctx.strokeStyle = on ? tok('--accent') : tok('--stringer'); ctx.lineWidth = on ? 2.5 : 1.5;
+        ctx.beginPath(); ctx.moveTo(cx1 - half, y); ctx.lineTo(cx1 + half, y); ctx.stroke();
+      });
+      marker(ctx, cx1 - maxHalf * s1 - 4, cx1 + maxHalf * s1 + 4, b3 - cur.x * s1);
+      var st = board.station(posU * L);
+      var rx0 = m + miniW + 28, rw = w - rx0 - m;
+      var sc = rw / (2 * maxHalf);
+      var cx2 = rx0 + rw / 2, by = h / 2 + 10;
+      ctx.strokeStyle = line; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(cx2, by - board.maxThick * sc - 24); ctx.lineTo(cx2, by + 24); ctx.stroke();
+      if (st.W > 0.01) drawSection(ctx, st, cx2, by, sc, fg);
+      label(ctx, '実寸の比率', cx2, by + 44, 'center', muted, 11);
+    }
+  }
+
+  // 断面を描く（dashed で変更前の点線）
+  function drawSection(ctx, st, cx, by, sc, color, dashed) {
+    // 点と点の中間を通る曲線でつなぎ、拡大しても角張って見えないようにする
+    var P = st.ring.map(function (q) { return [cx + q[0] * sc, by - (q[1] - st.B) * sc]; }), n = P.length;
+    var mid = function (a, b) { return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; };
+    ctx.beginPath();
+    var m0 = mid(P[n - 1], P[0]);
+    ctx.moveTo(m0[0], m0[1]);
+    for (var i = 0; i < n; i++) {
+      var mm = mid(P[i], P[(i + 1) % n]);
+      ctx.quadraticCurveTo(P[i][0], P[i][1], mm[0], mm[1]);
+    }
+    ctx.closePath();
+    if (dashed) { ctx.setLineDash([4, 4]); ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]); }
+    else { ctx.fillStyle = tok('--accent-soft'); ctx.fill(); ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke(); }
+  }
+
+  /* ---------- 断面シート（コンケーブ / レール） ----------
+   * スライダーは「今の断面からの変更」。決定すると、その位置の断面を直す（なければ断面を 1 枚足す）
+   */
+  var secSheet = null;
+  var secQueued = false;
+  var RAIL_B = 0.6;   // brd.js と同じ: b = ±1 でポイントの高さが厚さの ±60% 動く
+
+  function railLabel(k, v) {
+    var n = Math.round(v * 100);
+    if (!n) return '今のまま';
+    var words = { c: ['絞る', 'ふっくら'], g: ['丸い', 'エッジ'] }[k];
+    return (n > 0 ? words[1] : words[0]) + ' ' + Math.abs(n);
+  }
+
+  // 種類と深さ（アンダーエッジの高さ。中心の点から測る）をそのまま渡す
+  function applyConcave() {
+    secSheet.v.cc = secSheet.type;
+    secSheet.v.dep = secSheet.depth;
+  }
+
+  function setSecInputs() {
+    var v = secSheet.v;
+    $$('#ccType button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.type === secSheet.type)); });
+    $('#sDepth').value = Math.round(secSheet.depth * 100) / 10;   // cm → mm（0.1 刻み）
+    $('#ccHow').textContent = {
+      single: 'シングル: 青い点（アンダーエッジ）を、中心の点よりこの分だけ下げます。',
+      double: 'ダブル: 青い点（アンダーエッジ）は動かさず、中心の点との間をこの分だけくぼませます。',
+      vee: 'V: 青い点（アンダーエッジ）を、中心の点よりこの分だけ上げます。レール側は自動でなだらかに整えます。'
+    }[secSheet.type];
+    var mm = Math.round(secSheet.depth * 100) / 10;
+    $('#vDepth').textContent = mm.toFixed(1) + ' mm' + (secSheet.v.cc ? '' : '（今の形）');
+    // レールの高さ: ポイントの高さを厚さに対する割合で表す（f0 は今の割合）
+    var f = Math.min(0.85, Math.max(0.08, secSheet.f0 + v.b * RAIL_B));
+    $('#sB').value = Math.round(f * 100);
+    $('#vB').textContent = 'ボトムから ' + fmt('t@', f * secSheet.T) + '（厚さの ' + Math.round(f * 100) + '%）';
+    $('#sC').value = Math.round(v.c * 100); $('#sG').value = Math.round(v.g * 100);
+    $('#vC').textContent = railLabel('c', v.c); $('#vG').textContent = railLabel('g', v.g);
+  }
+
+  // 断面のポイント（レールの一番外側）の位置 [x, y]
+  function apexOf(st) {
+    var h = st.half, ia = 0;
+    for (var i = 1; i < h.length; i++) if (h[i][0] > h[ia][0]) ia = i;
+    return h[ia];
+  }
+
+  /*
+   * 断面のレール先端（一番外側）から内側へ inset(cm) の位置の厚み(cm)。
+   * その位置のデッキ面とボトム面の上下の距離。返り値 { t, top, bottom, x } / 測れないときは null
+   */
+  function railThickness(st, inset) {
+    var h = st.half, n = h.length, ia = 0, i;
+    for (i = 1; i < n; i++) if (h[i][0] > h[ia][0]) ia = i;
+    var X = h[ia][0] - inset;
+    if (X <= 0) return null;
+    function yAt(from, to, pick) {
+      var best = null;
+      for (var k = from; k < to; k++) {
+        var a = h[k], b = h[k + 1], lo = Math.min(a[0], b[0]), hi = Math.max(a[0], b[0]);
+        if (X < lo || X > hi || hi - lo < 1e-9) continue;
+        var y = a[1] + (b[1] - a[1]) * (X - a[0]) / (b[0] - a[0]);
+        if (best === null || pick(y, best)) best = y;
+      }
+      return best;
+    }
+    var bottom = yAt(0, ia, function (y, b) { return y < b; });
+    var top = yAt(ia, n - 1, function (y, b) { return y > b; });
+    if (bottom === null || top === null) return null;
+    return { t: top - bottom, top: top, bottom: bottom, x: X };
+  }
+
+  function showRailThickness(st, s0) {
+    [[1, '#rt1', '#rt1o'], [2, '#rt2', '#rt2o']].forEach(function (r) {
+      var now = railThickness(st, r[0]), was = railThickness(s0, r[0]);
+      $(r[1]).textContent = now ? fmt('t@', now.t) : '—';
+      $(r[2]).textContent = now ? (fmt('t@', now.t, unit === 'cm' ? 'in' : 'cm') + (was ? ' ・ 変更前 ' + fmt('t@', was.t) : '')) : 'レールが細すぎて測れません';
+    });
+  }
+
+  function drawSecPreview() {
+    if (!secSheet) return;
+    var c = setupCanvas($('#secPrev')), ctx = c.ctx;
+    var x = secSheet.u * board.L;
+    var st = board.station(x), s0 = secSheet.board0.station(x);
+    if (st.W < 0.01) return;
+    if (secSheet.mode !== 'rail') {
+      var sc = Math.min((c.w - 24) / (2 * st.W), (c.h - 24) / (st.T * 1.6));
+      var by = c.h / 2 + st.T * sc / 2;
+      drawSection(ctx, s0, c.w / 2, by, sc, tok('--muted'), true);
+      drawSection(ctx, st, c.w / 2, by, sc, tok('--fg'));
+      var mk = BRD.sectionMarks(board, secSheet.u);
+      if (mk && mk.underEdge) {
+        var ex = c.w / 2 + mk.underEdge[0] * sc, ey = by - (mk.underEdge[1] - st.B) * sc;
+        ctx.beginPath(); ctx.arc(ex, ey, 5, 0, 7);
+        ctx.fillStyle = tok('--edge'); ctx.fill(); ctx.strokeStyle = tok('--surface'); ctx.lineWidth = 1.5; ctx.stroke();
+        label(ctx, 'アンダーエッジ', ex - 8, ey + 18, 'right', tok('--edge'), 11, 700);
+        var cxp = c.w / 2, cyp = by - (mk.center[1] - st.B) * sc;
+        ctx.beginPath(); ctx.arc(cxp, cyp, 4, 0, 7); ctx.fillStyle = tok('--stringer'); ctx.fill();
+        label(ctx, '中心', cxp, cyp + 16, 'center', tok('--stringer'), 10, 700);
+      }
+      return;
+    }
+    // レール: 先端から 6cm の範囲を拡大して見せる（右側のレール）。倍率はその範囲の厚みに合わせる
+    var span = Math.min(6, st.W), yLo = Infinity, yHi = -Infinity;
+    st.half.concat(s0.half).forEach(function (q) {
+      if (q[0] >= st.W - span) { yLo = Math.min(yLo, q[1] - st.B); yHi = Math.max(yHi, q[1] - st.B); }
+    });
+    var sc2 = Math.min((c.w - 40) / span, (c.h - 34) / Math.max(0.5, yHi - yLo));
+    var cx = c.w - 16 - st.W * sc2;            // 中心線の位置（画面の左の外に出る）
+    var by2 = c.h / 2 + (yHi + yLo) / 2 * sc2 + 6;
+    drawSection(ctx, s0, cx, by2, sc2, tok('--muted'), true);
+    drawSection(ctx, st, cx, by2, sc2, tok('--fg'));
+    // レール先端から 1cm・2cm の位置に線を引く
+    ctx.strokeStyle = tok('--accent'); ctx.lineWidth = 1.5;
+    [1, 2].forEach(function (inset) {
+      var r = railThickness(st, inset);
+      if (!r) return;
+      var X = cx + r.x * sc2;
+      ctx.beginPath(); ctx.moveTo(X, by2 - (r.bottom - st.B) * sc2); ctx.lineTo(X, by2 - (r.top - st.B) * sc2); ctx.stroke();
+      label(ctx, inset + 'cm', X, by2 - (r.top - st.B) * sc2 - 5, 'center', tok('--accent'), 11, 700);
+    });
+    // ポイント（レールの一番外側）
+    var ap = apexOf(st), apx = cx + ap[0] * sc2, apy = by2 - (ap[1] - st.B) * sc2;
+    ctx.beginPath(); ctx.arc(apx, apy, 5, 0, 7);
+    ctx.fillStyle = tok('--stringer'); ctx.fill(); ctx.strokeStyle = tok('--surface'); ctx.lineWidth = 1.5; ctx.stroke();
+    label(ctx, 'ポイント', apx - 8, apy + 4, 'right', tok('--stringer'), 11, 700);
+    label(ctx, 'レール付近を拡大', 8, c.h - 6, 'left', tok('--muted'), 10);
+    showRailThickness(st, s0);
+  }
+
+  function openSecSheet(mode) {
+    if (!board) return;
+    var x = posU * board.L;
+    secSheet = { mode: mode, u: posU, doc0: doc, base0: base, board0: board,
+      v: { b: 0, c: 0, g: 0, cc: null, dep: 0 }, type: 'single', depth: 0 };
+    // 今の断面のコンケーブ（種類と深さ）から始める
+    var det = BRD.sectionConcave(board, posU);
+    secSheet.det = det || { type: 'single', depth: 0 };
+    secSheet.type = secSheet.det.type; secSheet.depth = Math.min(0.8, secSheet.det.depth);
+    var cur = board.station(x), ap = apexOf(cur);
+    secSheet.T = cur.T;
+    secSheet.f0 = cur.T > 0.01 ? (ap[1] - cur.B) / cur.T : 0.3;
+    var has = pointNear(posU, 'section', 0.05) !== null;
+    var where = 'テールから ' + fmtPos(x) + ' の位置の断面を' + (has ? '直します' : '1 枚足して直します') + '（今の形からの変更）。前後の断面となだらかにつながります。';
+    if (mode === 'concave') {
+      $('#secTitle').textContent = 'この位置のコンケーブ';
+      $('#secSub').textContent = where + ' 青い点はアンダーエッジ（レールの一番下の点）で、これを基準に深さが決まります。';
+    } else {
+      $('#secTitle').textContent = 'この位置のレール';
+      $('#secSub').textContent = where + ' ● のポイント（レールの一番外側）の高さと、ポイントから上・下の形を調整します。';
+    }
+    $('#secSheet').classList.toggle('rail', mode === 'rail');
+    $('#grpConcave').hidden = mode !== 'concave';
+    $('#grpRail').hidden = mode !== 'rail';
+    setSecInputs();
+    $('#scrim').hidden = false; $('#secSheet').hidden = false;
+    drawSecPreview();
+  }
+
+  function applySecPreview() {
+    secQueued = false;
+    if (!secSheet) return;
+    setDoc(BRD.edit(secSheet.doc0, secSheet.base0, secSheet.board0, 's@', secSheet.v, secSheet.u));
+    renderAll(true);
+    drawSecPreview();
+  }
+  function queueSec() { if (!secQueued) { secQueued = true; requestAnimationFrame(applySecPreview); } }
+
+  function onRailInput() {
+    var f = $('#sB').value / 100;
+    secSheet.v.b = Math.max(-1, Math.min(1, (f - secSheet.f0) / RAIL_B));
+    secSheet.v.c = $('#sC').value / 100; secSheet.v.g = $('#sG').value / 100;
+    setSecInputs(); queueSec();
+  }
+  function onDepthInput() {
+    secSheet.depth = $('#sDepth').value / 10;   // mm → cm
+    applyConcave(); setSecInputs(); queueSec();
+  }
+
+  function closeSecSheet(commit) {
+    if (!secSheet) return;
+    if (commit) applySecPreview();   // まだ反映していない入力があれば先に反映する
+    if (commit) pushHistory(secSheet.doc0);
+    else setDoc(secSheet.doc0);
+    if (commit) snapToNewPoint(secSheet.u);
+    secSheet = null;
+    $('#scrim').hidden = true; $('#secSheet').hidden = true;
+    renderAll(true);
+  }
+
+  ['#sB', '#sC', '#sG'].forEach(function (id) { $(id).addEventListener('input', onRailInput); });
+  $('#sDepth').addEventListener('input', onDepthInput);
+  $$('#ccType button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      secSheet.type = b.dataset.type;
+      applyConcave(); setSecInputs(); queueSec();
+    });
+  });
+  $('#secZero').addEventListener('click', function () {
+    secSheet.v = { b: 0, c: 0, g: 0, cc: null, dep: 0 };
+    secSheet.type = secSheet.det.type; secSheet.depth = Math.min(0.8, secSheet.det.depth);
+    setSecInputs();
+    applySecPreview();
+  });
+  $('#secCancel').addEventListener('click', function () { closeSecSheet(false); });
+  $('#secOk').addEventListener('click', function () { closeSecSheet(true); });
+
+  /* ---------- 位置（スライダー・図をなぞる） ---------- */
+  function setPosFromPointer(e) {
+    if (tab === '3d' || !geo2 || !board) return;
+    var r = $('#c2d').getBoundingClientRect();
+    var x = (geo2.base - (e.clientY - r.top)) / geo2.s;
+    setPos(x / board.L);
+  }
+  var dragging = false;
+  $('#c2d').addEventListener('pointerdown', function (e) { dragging = true; $('#c2d').setPointerCapture(e.pointerId); setPosFromPointer(e); });
+  $('#c2d').addEventListener('pointermove', function (e) { if (dragging) setPosFromPointer(e); });
+  ['pointerup', 'pointercancel'].forEach(function (t) { $('#c2d').addEventListener(t, function () { dragging = false; }); });
+
+  // 位置を決める。点の近く（SNAP cm 以内）なら点に吸い付く
+  function setPos(u) {
+    u = Math.min(1, Math.max(0, u));
+    if (board) {
+      var px = pointNear(u, tab, SNAP);
+      if (px !== null) u = px / board.L;
+    }
+    posU = u;
+    $('#pos').value = Math.round(posU * 1000);
+    renderUnder();
+    draw2D();
+  }
+
+  // 点を足したあとは、その点に合わせておく
+  function snapToNewPoint(u) {
+    var px = pointNear(u, tab, BRD.NEAR + 2);
+    if (px !== null) posU = px / board.L;
+  }
+
+  /* ---------- 寸法・位置の数値 ---------- */
+  function pushHistory(d) {
+    if (BRD.docKey(d) === BRD.docKey(doc)) return;   // 変わっていなければ残さない
+    history.push(d);
+    if (history.length > 50) history.shift();
+  }
+
+  function renderDims() {
+    var items = [['length', '長さ'], ['width', '幅'], ['thick', '厚さ']];
+    var html = items.map(function (it) {
+      var v = valueOf(board, it[0]), o = valueOf(original, it[0]);
+      var changed = Math.abs(v - o) > 0.05;
+      return '<button type="button" class="dim" data-edit="' + it[0] + '">'
+        + '<span class="k">' + it[1] + PEN + '</span>'
+        + '<span class="v">' + fmt(it[0], v) + '</span>'
+        + '<span class="s' + (changed ? ' changed' : '') + '">' + (changed ? '元 ' + fmt(it[0], o) : fmt(it[0], v, unit === 'cm' ? 'in' : 'cm')) + '</span></button>';
+    }).join('');
+    var dv = Math.abs(board.volume - original.volume) > 0.05;
+    html += '<div class="dim ro"><span class="k">容積</span><span class="v">' + board.volume.toFixed(1) + ' L</span>'
+      + '<span class="s' + (dv ? ' changed' : '') + '">' + (dv ? '元 ' + original.volume.toFixed(1) + ' L' : '自動計算') + '</span></div>';
+    $('#dims').innerHTML = html;
+    $('#undo').disabled = !history.length;
+    $('#reset').disabled = BRD.docKey(doc) === BRD.docKey(docOrig);
+  }
+
+  var CHIPS = { outline: [['w@', '幅']], rocker: [['r@', 'ロッカー'], ['t@', '厚さ']], section: [['cc', 'コンケーブ'], ['rl', 'レール']] };
+  var NOTES = {
+    '3d': '寸法の数字をタップすると変更できます。変えた形は右上の「保存」でファイル（.scb）に保存できます。',
+    outline: '● はアウトラインの点です。スライダーや図をなぞって点に近づけると吸い付き、その点を直せます。点のない所では点を 1 つ足して直します。',
+    rocker: '左の線がボトム、右の線がデッキ（実寸の比率）。● はボトムとデッキの点です。点に合わせるとその点を、点のない所では点を足して直します。',
+    section: '左の図の線は断面のある位置です。線に合わせるとその断面を、線のない所では断面を 1 枚足して直します。'
+  };
+
+  function renderUnder() {
+    if (!board) return;
+    $('#posCtl').hidden = tab === '3d';
+    $('#note').textContent = NOTES[tab];
+    if (tab === '3d') return;
+    var x = posU * board.L, on = onPoint();
+    $('#posTail').textContent = 'テールから ' + fmtPos(x) + (on ? (tab === 'section' ? ' ・ 断面' : ' ・ ● 点') : '');
+    $('#posNose').textContent = 'ノーズから ' + fmtPos(board.L - x);
+    $('#chips').classList.toggle('three', CHIPS[tab].length > 2);
+    $('#chips').innerHTML = CHIPS[tab].map(function (c) {
+      var v = (c[0] === 'cc' || c[0] === 'rl')
+        ? '<span class="cv txt">' + (on ? '直す' : '足す') + '</span>'
+        : '<span class="cv">' + fmt(c[0], valueOf(board, c[0], posU)) + '</span>';
+      return '<button type="button" class="chip" data-edit="' + c[0] + '"><span class="ck">' + c[1] + '</span>' + v + PEN + '</button>';
+    }).join('');
+  }
+
+  function renderAll(meshToo) {
+    renderDims();
+    renderUnder();
+    if (meshToo) buildMesh();
+    draw2D();
+  }
+
+  /* ---------- 数値入力シート ---------- */
+  var sheet = null;
+  var previewQueued = false;
+
+  function inchParse(s) {
+    s = String(s).trim().replace(/["″”]/g, '');
+    if (!s) return NaN;
+    var m = s.match(/^(-?\d+(?:\.\d+)?)?\s*(?:(\d+)\s*\/\s*(\d+))?$/);
+    if (!m || (!m[1] && !m[2])) return NaN;
+    var v = m[1] ? parseFloat(m[1]) : 0;
+    if (m[2]) v += (v < 0 ? -1 : 1) * parseInt(m[2], 10) / parseInt(m[3], 10);
+    return v;
+  }
+  function trimNum(v, d) { return String(parseFloat(v.toFixed(d))); }
+
+  function renderFields() {
+    var k = sheet.kind, v = sheet.value, html;
+    if (k === 'length' && unit === 'in') {
+      var tin = v / 2.54, ft = Math.floor(tin / 12), rest = tin - ft * 12;
+      html = '<label><input id="fFt" inputmode="numeric" value="' + ft + '" aria-label="フィート"><span class="u">ft</span></label>'
+        + '<label><input id="fIn" inputmode="decimal" value="' + trimNum(rest, 3) + '" aria-label="インチ"><span class="u">in</span></label>';
+    } else if (unit === 'in') {
+      html = '<label><input id="fV" inputmode="decimal" value="' + trimNum(v / 2.54, 4) + '" aria-label="インチ"><span class="u">in</span></label>';
+    } else {
+      html = '<label><input id="fV" inputmode="decimal" value="' + trimNum(v, 2) + '" aria-label="センチ"><span class="u">cm</span></label>';
+    }
+    $('#fields').innerHTML = html;
+    $$('#fields input').forEach(function (inp) { inp.addEventListener('input', readFields); });
+  }
+
+  function readFields() {
+    var v;
+    if ($('#fFt')) v = (parseFloat($('#fFt').value || '0') * 12 + inchParse($('#fIn').value || '0')) * 2.54;
+    else if (unit === 'in') v = inchParse($('#fV').value) * 2.54;
+    else v = parseFloat($('#fV').value);
+    if (isFinite(v)) sheet.value = v;
+    sheet.valid = isFinite(v);
+    queuePreview();
+  }
+
+  function queuePreview() {
+    if (previewQueued) return;
+    previewQueued = true;
+    requestAnimationFrame(function () { previewQueued = false; applyPreview(); });
+  }
+
+  function applyPreview() {
+    if (!sheet) return;
+    var K = KINDS[sheet.kind], v = sheet.value;
+    var ok = sheet.valid !== false && v >= K.min && v <= K.max;
+    $('#ok').disabled = !ok;
+    if (!ok) {
+      $('#preview').innerHTML = '<span class="err">' + fmt(sheet.kind, K.min) + ' 〜 ' + fmt(sheet.kind, K.max) + ' の範囲で入力してください</span>';
+      return;
+    }
+    var d = BRD.edit(sheet.doc0, sheet.base0, sheet.board0, sheet.kind, v, sheet.u);
+    if (!d) {
+      $('#ok').disabled = true;
+      $('#preview').innerHTML = '<span class="err">この値ではなだらかなカーブにできません。少し戻してください。</span>';
+      return;
+    }
+    $('#preview').textContent = fmt(sheet.kind, v, 'in') + '（' + fmt(sheet.kind, v, 'cm') + '）';
+    setDoc(d);
+    renderAll(true);
+  }
+
+  function openSheet(kind) {
+    if (!board) return;
+    var K = KINDS[kind];
+    var v = valueOf(board, kind, posU);
+    sheet = { kind: kind, u: posU, value: v, doc0: doc, base0: base, board0: board, valid: true };
+    var title = K.title;
+    if (/@$/.test(kind)) title += onPoint() ? '（この点を直す）' : '（点を足す）';
+    $('#sheetTitle').textContent = title;
+    $('#sheetSub').textContent = K.sub || ('テールから ' + fmtPos(posU * board.L) + ' の位置。' + K.how + ' 今は ' + fmt(kind, v) + '。');
+    $$('.units button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.unit === unit)); });
+    renderFields();
+    $('#preview').textContent = fmt(kind, v, 'in') + '（' + fmt(kind, v, 'cm') + '）';
+    $('#ok').disabled = false;
+    $('#scrim').hidden = false; $('#sheet').hidden = false;
+  }
+
+  function closeSheet(commit) {
+    if (!sheet) return;
+    if (commit) applyPreview();   // まだ反映していない入力があれば先に反映する
+    if (commit && $('#ok').disabled) return;
+    if (commit) { pushHistory(sheet.doc0); if (/@$/.test(sheet.kind)) snapToNewPoint(sheet.u); }
+    else setDoc(sheet.doc0);
+    sheet = null;
+    $('#scrim').hidden = true; $('#sheet').hidden = true;
+    renderAll(true);
+  }
+
+  function step(dir) {
+    if (!sheet) return;
+    var K = KINDS[sheet.kind];
+    var st = unit === 'in' ? K.stepIn * 2.54 : K.stepCm;
+    // 目盛りにそろえてから 1 目盛り動かす
+    var n = Math.round(sheet.value / st + 1e-6);
+    var snapped = n * st;
+    sheet.value = Math.abs(snapped - sheet.value) > 1e-6 && (snapped - sheet.value) * dir > 0 ? snapped : (n + dir) * st;
+    sheet.valid = true;
+    renderFields();
+    queuePreview();
+  }
+
+  function setUnit(u) {
+    unit = u;
+    try { localStorage.setItem('bshape-unit', u); } catch (e) {}
+    $$('.units button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.unit === u)); });
+    if (sheet) renderFields();
+    renderDims(); renderUnder();
+  }
+
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-edit]');
+    if (!t) return;
+    if (t.dataset.edit === 'cc') openSecSheet('concave');
+    else if (t.dataset.edit === 'rl') openSecSheet('rail');
+    else openSheet(t.dataset.edit);
+  });
+  $('#minus').addEventListener('click', function () { step(-1); });
+  $('#plus').addEventListener('click', function () { step(1); });
+  $('#ok').addEventListener('click', function () { closeSheet(true); });
+  $('#cancel').addEventListener('click', function () { closeSheet(false); });
+  $('#scrim').addEventListener('click', function () {
+    if (secSheet) closeSecSheet(false); else if (!$('#saveSheet').hidden) closeSave(); else closeSheet(false);
+  });
+  $$('.units button').forEach(function (b) { b.addEventListener('click', function () { setUnit(b.dataset.unit); }); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+      if (secSheet) closeSecSheet(false); else if (!$('#saveSheet').hidden) closeSave(); else if (sheet) closeSheet(false);
+      return;
+    }
+    if (e.key === 'Enter' && sheet && !$('#ok').disabled) closeSheet(true);
+  });
+
+  $('#undo').addEventListener('click', function () {
+    if (!history.length) return;
+    setDoc(history.pop());
+    renderAll(true);
+  });
+  $('#reset').addEventListener('click', function () {
+    pushHistory(doc);
+    setDoc(BRD.cloneDoc(docOrig));
+    renderAll(true);
+  });
+
+  /* ---------- 名前を付けて保存 ---------- */
+  // 保存するファイルは .scb（中身はテキスト）。Artifact の中では downloads 機能で .scb.txt、ふつうのブラウザでは .scb をそのまま保存
+  var downloadsP = (window.claude && window.claude.use)
+    ? window.claude.use('downloads').catch(function () { return null; })
+    : Promise.resolve(null);
+  var inArtifact = !!(window.claude && window.claude.use);
+  var toastTimer = null;
+  function toast(msg) {
+    $('#toast').textContent = msg;
+    $('#toast').hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { $('#toast').hidden = true; }, 6000);
+  }
+
+  function cleanName(s) {
+    return String(s || '').replace(/\.txt$/i, '').replace(/\.(brd|scb)$/i, '').replace(/[\\/:*?"<>|]/g, '').trim();
+  }
+
+  $('#save').addEventListener('click', function () {
+    if (!board) return;
+    var edited = BRD.docKey(doc) !== BRD.docKey(docOrig);
+    $('#saveName').value = cleanName(boardName) + (edited && !/_edit$/.test(cleanName(boardName)) ? '_edit' : '');
+    $('#saveNote').textContent = inArtifact
+      ? 'この画面からは「名前.scb.txt」で保存されます。このアプリの「開く」でそのまま開けます。'
+      : '「名前.scb」で保存されます。このアプリの「開く」で開けます。';
+    $('#scrim').hidden = false; $('#saveSheet').hidden = false;
+    $('#saveName').focus();
+    $('#saveName').select();
+  });
+
+  function closeSave() { $('#scrim').hidden = true; $('#saveSheet').hidden = true; }
+  $('#saveCancel').addEventListener('click', closeSave);
+  $('#saveName').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); $('#saveOk').click(); } });
+
+  $('#saveOk').addEventListener('click', function () {
+    var stem = cleanName($('#saveName').value);
+    if (!stem) { $('#saveNote').innerHTML = '<span class="err">ファイル名を入れてください。</span>'; return; }
+    var text;
+    try { text = BRD.docToText(doc, board); }
+    catch (e) { toast('保存用のデータを作れませんでした: ' + e.message); return; }
+    closeSave();
+    downloadsP.then(function (dl) {
+      if (dl) {
+        return dl.save({ filename: stem + '.scb.txt', data: text }).then(function () {
+          boardName = stem;
+          toast(stem + '.scb.txt を保存しました。このアプリの「開く」でそのまま開けます。');
+        }, function (err) {
+          var code = err && err.code;
+          if (code === 'declined') toast('保存を取りやめました。');
+          else if (code === 'rate_limited') toast('少し待ってから、もう一度「保存」を押してください。');
+          else toast('この画面では保存できません（' + (code || '不明なエラー') + '）。');
+        });
+      }
+      var url = URL.createObjectURL(new Blob([text], { type: 'application/octet-stream' }));
+      var a = document.createElement('a');
+      a.href = url; a.download = stem + '.scb';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+      boardName = stem;
+      toast(stem + '.scb を保存しました。');
+    });
+  });
+
+  /* ---------- タブ ---------- */
+  function setTab(t) {
+    tab = t;
+    $$('.tabbar button').forEach(function (b) { b.setAttribute('aria-selected', String(b.dataset.tab === t)); });
+    var is3d = t === '3d';
+    $('#c3d').hidden = !is3d;
+    $('#views').hidden = !is3d;
+    $('#hint').hidden = !is3d;
+    $('#c2d').hidden = is3d;
+    if (!is3d && board) setPos(posU); else renderUnder();
+    if (is3d) resize3D(); else draw2D();
+  }
+
+  /* ---------- 読み込み ---------- */
+  function load(text, name) {
+    var d;
+    try { d = BRD.docFromText(text); }
+    catch (e) {
+      $('#note').textContent = '';
+      var span = document.createElement('span'); span.className = 'err';
+      span.textContent = name + ' を読み込めませんでした: ' + e.message;
+      $('#note').appendChild(span);
+      return;
+    }
+    setDoc(d);
+    docOrig = d; original = board; boardName = cleanName(name) || 'ショートボード';
+    history = [];
+    renderAll(true);
+    setView(view);
+    setTab(tab);
+  }
+
+  var samples = window.BRD_SAMPLES || {};
+  var names = Object.keys(samples);
+  function fillSelect(extra) {
+    var opts = names.map(function (n) { return '<option value="' + n + '">' + n + '</option>'; });
+    if (extra) opts.unshift('<option value="__file">' + extra.replace(/[<>&"]/g, '') + '</option>');
+    $('#sample').innerHTML = opts.join('');
+  }
+  fillSelect();
+  $('#sample').addEventListener('change', function (e) { if (samples[e.target.value]) load(samples[e.target.value], e.target.value); });
+  $('#file').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0];
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () { fillSelect(f.name); $('#sample').value = '__file'; load(String(r.result), f.name); };
+    r.readAsText(f);
+    e.target.value = '';
+  });
+
+  $$('.tabbar button').forEach(function (b) { b.addEventListener('click', function () { setTab(b.dataset.tab); }); });
+  $$('#views button').forEach(function (b) { b.addEventListener('click', function () { setView(b.dataset.view); }); });
+  $('#pos').addEventListener('input', function (e) { setPos(e.target.value / 1000); });
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', draw2D);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(draw2D);
+
+  try { init3D(); resize3D(); }
+  catch (e) {
+    var dv = document.createElement('div'); dv.className = 'msg';
+    dv.textContent = '3D 表示を開始できませんでした（' + e.message + '）。下のタブから図面を見られます。';
+    $('#stage').appendChild(dv);
+  }
+  var startTab = (location.hash || '').slice(1);
+  if (['3d', 'outline', 'rocker', 'section'].indexOf(startTab) >= 0) tab = startTab;
+  if (names.length) { $('#sample').value = names[0]; load(samples[names[0]], names[0]); }
+})();
+</script>
+</body></html>
